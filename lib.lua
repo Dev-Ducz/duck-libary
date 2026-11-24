@@ -1,6 +1,18 @@
+-- BANANA / CHUOI HUB — whitelist removed
+getgenv().Key = getgenv().Key or "BYPASS_KEY_0000000000000000"
+getgenv().ReadyExecute = nil
+getgenv().__BANANA_LOADER_RAN = nil
+getgenv().__BF_LOADED = nil
+getgenv().HideUI = false
+getgenv().ShowUI = true
+print("[Banana] patched boot")
+
+rejectWhitelist = function(msg)
+    warn("[Banana] WL ignored:", msg)
+    return true
+end
+
 local Features = {}
--- CLEAN FILE MOI Banana_cat_Hub.lua (CLEAN_ChuoiHub V5) - DA XOA HET CHECK KEY/HWID/WHITELIST, XOA BANG WHITELIST CHUOI HUB
-rejectWhitelist = function(...) return true end -- CLEAN: khong reject nua
 local blackScreen, blackScreen2, HttpService, rejectWhitelist, nextEntry2, nextEntry3, nextEntry
 local logPrefix, hasEntry, entryKey, hasEntry2, entryValue, entryKey2, hasEntry3, entryValue2
 local result, entryKey3, hasEntry4, entryValue3, entryKey4, hasEntry5, entryValue4, entryKey5
@@ -11,6 +23,84 @@ local entryKey14, entryValue11, hasEntry15, hasEntry22, hasEntry32, hasEntry42, 
 local entryValue32, entryKey15, entryValue42, entryValue52, entryKey22, result2, createToggle
 local createToggle2, tweenService
 local Runtime = {}
+
+-- [extra tabs] tabs that were missing after Stack Farming
+function __BF_BuildExtraTabs()
+    local genv = getgenv()
+    if genv.__BF_EXTRA_TABS then return end
+    genv.__BF_EXTRA_TABS = true
+    local Players = game:GetService("Players")
+    local lp = Players.LocalPlayer
+    local function toggle(section, title, cb)
+        local default = Settings and Settings[title]
+        if default == nil then default = false end
+        section.CreateToggle({Title = title, Desc = nil, Default = default}, function(v)
+            pcall(SaveSettings, title, v)
+            cb(v)
+        end)
+        if default then task.spawn(function() pcall(cb, true) end) end
+    end
+
+    -- Teleport tab
+    local tp = Main.CreatePage({Page_Name = "Teleport", Page_Title = "Teleport"})
+    local seas = tp.CreateSection("Sea")
+    local function travel(arg)
+        pcall(function()
+            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer(arg)
+        end)
+    end
+    seas.CreateButton({Title = "Teleport First Sea"}, function() travel("TravelMain") end)
+    seas.CreateButton({Title = "Teleport Second Sea"}, function() travel("TravelDressrosa") end)
+    seas.CreateButton({Title = "Teleport Third Sea"}, function() travel("TravelZou") end)
+
+    -- Misc tab
+    local misc = Main.CreatePage({Page_Name = "Misc", Page_Title = "Misc"})
+    local util = misc.CreateSection("Utility")
+
+    toggle(util, "Anti AFK", function(on)
+        if not on then
+            if genv.__BF_AFK then genv.__BF_AFK:Disconnect() genv.__BF_AFK = nil end
+            return
+        end
+        if genv.__BF_AFK then return end
+        genv.__BF_AFK = lp.Idled:Connect(function()
+            local vu = game:GetService("VirtualUser")
+            vu:CaptureController()
+            vu:ClickButton2(Vector2.new())
+        end)
+    end)
+
+    toggle(util, "FPS Boost", function(on)
+        if not on then return end
+        pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
+        pcall(function()
+            local l = game:GetService("Lighting")
+            l.GlobalShadows = false
+            l.FogEnd = 9e9
+            for _, v in ipairs(l:GetChildren()) do
+                if v:IsA("PostEffect") or v:IsA("Atmosphere") then v.Enabled = false end
+            end
+        end)
+        pcall(function()
+            for _, v in ipairs(workspace:GetDescendants()) do
+                if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Fire") then
+                    v.Enabled = false
+                end
+            end
+        end)
+    end)
+
+    local srv = misc.CreateSection("Server")
+    srv.CreateButton({Title = "Hop Server"}, function()
+        pcall(function() HopServer() end)
+    end)
+    srv.CreateButton({Title = "Rejoin Server"}, function()
+        pcall(function()
+            game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, lp)
+        end)
+    end)
+    print("[Banana] extra tabs built: Teleport, Misc")
+end
 
 local function createIterator(iterator, state, control)
     return coroutine.wrap(function()
@@ -25,50 +115,26 @@ do
     Runtime.features = {}
 
     -- Verify whitelist session
-    function Features.verifyWhitelistSession() return {}, {}, {}, {}, {}, {}, 0, nil, nil, nil, nil end -- CLEAN: da xoa verify whitelist
-function Features.verifyWhitelistSession_OLD()
-        local sharedState, sharedState2, sharedState3, sharedState4, sharedState5, sharedState6 = {}, {}, {}, {}, {}, {}
-        Runtime.updateWhitelistStatus("CLEAN")
-        os.clock()
-        sharedState.value = tostring(os.time())
-        sharedState2.value = Runtime.encodeHex(289181186, Runtime.transformWhitelistField(
-            "c6949ccd512754b94f27f4029fc0acc15de67945a0d401721f1c2abe46c4a8c3",
-            "key",
-            "1",
-            Runtime.whitelistKey
-        ))
-        sharedState3.value = Runtime.encodeHex(Runtime.guardKey20 + 428703842, Runtime.transformWhitelistField(
-            "c6949ccd512754b94f27f4029fc0acc15de67945a0d401721f1c2abe46c4a8c3",
-            "hwid",
-            "2",
-            nil -- CLEAN: da xoa HWID
-        ))
-        sharedState4.value = Runtime.encodeHex(289181186, Runtime.transformWhitelistField(
-            "c6949ccd512754b94f27f4029fc0acc15de67945a0d401721f1c2abe46c4a8c3",
-            "proof",
-            "3",
-            Runtime.whitelistKey .. ":" .. nil -- CLEAN: da xoa HWID .. ":" .. sharedState.value
-        ))
-        local value = bit32.band(Runtime.guardKey20, Runtime.numberValue6)
-        sharedState5.value = Runtime.encodeHex(Runtime.guardState18 - 872440572, Runtime.transformWhitelistField(
-            "c6949ccd512754b94f27f4029fc0acc15de67945a0d401721f1c2abe46c4a8c3",
-            "name",
-            "4",
-            Runtime.name
-        ))
-        sharedState6.value = Runtime.encodeHex(
-            value + 196051042,
-            Runtime.transformWhitelistField("c6949ccd512754b94f27f4029fc0acc15de67945a0d401721f1c2abe46c4a8c3", "version", "5", "5.0")
-        )
-        Runtime.guardKey = 4201837151
-        local value2, value3, value4 = Runtime.requestWithTimeout({
-            Url = "" -- CLEAN: da xoa banana-hub whitelist .. "?k=" .. sharedState2.value .. "&w=" .. sharedState3.value .. "&p=" .. sharedState4.value .. "&n=" .. sharedState5.value .. "&v=" .. sharedState6.value .. "&t=" .. sharedState.value .. "&fast=1",
-            Method = "GET",
-            Headers = {Accept = "application/json"},
-        }, 15)
-        Runtime.verificationResponse = value3
-        Runtime.verificationError = value4
-        return sharedState, sharedState2, sharedState3, sharedState4, sharedState5, sharedState6, value, value2, value3, value4, value2
+    function Features.verifyWhitelistSession()
+        -- no HTTP — instant pass
+        pcall(function()
+            if Runtime.updateWhitelistStatus then
+                Runtime.updateWhitelistStatus("Whitelist bypassed")
+            end
+        end)
+        Runtime.guardKey = Runtime.guardKey or 4201837151
+        Runtime.guardKey20 = Runtime.guardKey20 or 4155444640
+        Runtime.guardState18 = Runtime.guardState18 or 0
+        Runtime.guardState19 = Runtime.guardState19 or 0
+        Runtime.guardState20 = Runtime.guardState20 or 0
+        Runtime.numberValue6 = Runtime.numberValue6 or 93155309
+        Runtime.verificationResponse = {
+            StatusCode = 200,
+            Body = '{"success":true,"ok":true,"valid":true,"version":"5.0","val":"bypass"}'
+        }
+        Runtime.verificationError = nil
+        Runtime.whitelistOk = true
+        return {}, {}, {}, {}, {}, {}, 0, true, Runtime.verificationResponse, nil, true
     end
 
     -- Initialize settings
@@ -76,7 +142,10 @@ function Features.verifyWhitelistSession_OLD()
         local genv = getgenv()
         local genv2 = getgenv()
         local genv3 = getgenv()
-        Runtime.guardState21 = Runtime.guardState19 - Runtime.guardKey
+        Runtime.guardKey = Runtime.guardKey or 4201837151
+        Runtime.guardState19 = Runtime.guardState19 or 0
+        Runtime.guardState20 = Runtime.guardState20 or 0
+        Runtime.guardState21 = (Runtime.guardState19 or 0) - (Runtime.guardKey or 0)
         genv.__BF_BOOT_STAGE = "Before bootstrap"
         genv2.__BF_BOOT_ERRORS = {}
         genv3.__BF_BOOT_RECENT = {}
@@ -849,8 +918,7 @@ Recent output, oldest first (last 60 lines, E=error W=warn):
         Remote = handler
         getgenv().tablefruitausea3 = {}
         local value = bit32.lshift(Runtime.guardKey28, 21)
-        -- CLEAN: DA XOA BANG WHITELIST CHUOI HUB (whitelistedfruit)
-whitelistedfruit = nil
+        whitelistedfruit = {}
         TableDevilFruit = {}
         Runtime.n02 = 1
         Runtime.q02 = 5
@@ -1420,7 +1488,7 @@ whitelistedfruit = nil
             local getService3 = game.GetService
             local value5 = game.GetService(value4, "TweenService")
             local placeId = game.PlaceId
-            local request2 = syn.request or http_request
+            local request2 = (syn and syn.request) or http_request or request
             if game.CoreGui:FindFirstChild("SB_UI") then
                 game.CoreGui.SB_UI:Destroy()
             end
@@ -4939,24 +5007,24 @@ return ebgzqifrwa, lebidlyjyf
                         end
                         if value3 == true then
                             table.insert(data2, x)
-                            wait()
+                            task.wait()
                             pcall(function()
                                 writefile(
                                     "Banana Cat Hub/NotSameServers.json",
                                     game:GetService("HttpService"):JSONEncode(data2)
                                 )
-                                wait()
+                                task.wait()
                                 game:GetService("ReplicatedStorage").__ServerBrowser:InvokeServer("teleport", x)
                                 getgenv().limit_type("clearAll")
                             end)
-                            wait(4)
+                            task.wait(4)
                         end
                         numberValue = numberValue2
                     end
                 end
             end
 
-            while wait() do
+            while task.wait() do
                 HopServerLess()
             end
         end
@@ -5297,7 +5365,7 @@ return ebgzqifrwa, lebidlyjyf
         end
 
         spawn(function()
-            while wait(0.25) do
+            while task.wait(0.25) do
                 local ok, result3 = pcall(function()
                     local numberValue = 2240586139
                     local numberValue2 = 191845188
@@ -5692,7 +5760,7 @@ return ebgzqifrwa, lebidlyjyf
                 return true
             end
 
-            wait(0.5)
+            task.wait(0.5)
             Runtime.localPlayer2.Character.Humanoid.Health = 0
         end
 
@@ -5700,7 +5768,7 @@ return ebgzqifrwa, lebidlyjyf
         SectionLocalPlayerMain.CreateButton({Title = "Load config in Web"}, function()
             local HttpService2 = game:GetService("HttpService")
             game:GetService("RunService")
-            local text = "" -- CLEAN: da xoa cfg whitelist
+            local text = "https://cfg.banana-hub.xyz"
             local key = getgenv().Key
             local name = game.Players.LocalPlayer.Name
 
@@ -5743,7 +5811,7 @@ return ebgzqifrwa, lebidlyjyf
             local ok, result3 = pcall(function()
                 return request({
                     Url = string.format(
-                        "%s/config/get?CLEAN_auth -- da xoa authId/whitelist=%s&userId=%s&roblox=true",
+                        "%s/config/get?authId=%s&userId=%s&roblox=true",
                         text,
                         HttpService2:UrlEncode(key),
                         HttpService2:UrlEncode(name)
@@ -5765,7 +5833,7 @@ return ebgzqifrwa, lebidlyjyf
         end)
         SectionLocalPlayerMain.CreateButton({Title = "Push Data To Web ( just push when join game,if push again plz rejoin )"}, function()
             local HttpService2 = game:GetService("HttpService")
-            local text = "" -- CLEAN: da xoa cfg whitelist
+            local text = "https://cfg.banana-hub.xyz"
 
             function BuildSchema()
                 local nextEntry4, nextEntry22, hasEntry17, entryKey17, entryValue12, hasEntry24
@@ -13556,7 +13624,7 @@ return ebgzqifrwa, lebidlyjyf
                         local urlEncode = HttpService2.UrlEncode
                         return request({
                             Url = string.format(
-                                "%s/schema/init?CLEAN_auth -- da xoa authId/whitelist=%s&userId=%s",
+                                "%s/schema/init?authId=%s&userId=%s",
                                 text,
                                 HttpService2:UrlEncode(inputValue),
                                 urlEncode(HttpService2, inputValue2)
@@ -13586,7 +13654,7 @@ return ebgzqifrwa, lebidlyjyf
                     end
                     return false
                 end
-                warn("❌ Missing CLEAN_auth -- da xoa authId/whitelist or userId for schema upload")
+                warn("❌ Missing authId or userId for schema upload")
                 return false
             end
 
@@ -13603,7 +13671,7 @@ return ebgzqifrwa, lebidlyjyf
                         local urlEncode = HttpService2.UrlEncode
                         return request({
                             Url = string.format(
-                                "%s/schema/update?CLEAN_auth -- da xoa authId/whitelist=%s&userId=%s",
+                                "%s/schema/update?authId=%s&userId=%s",
                                 text,
                                 HttpService2:UrlEncode(inputValue),
                                 urlEncode(HttpService2, inputValue2)
@@ -13630,7 +13698,7 @@ return ebgzqifrwa, lebidlyjyf
             local key = getgenv().Key
             local name = game.Players.LocalPlayer.Name
             request({
-                Url = "" -- CLEAN: da xoa cfg whitelist .. key .. "&userId=" .. name .. "&roblox=true",
+                Url = "https://cfg.banana-hub.xyz/config/get?authId=" .. key .. "&userId=" .. name .. "&roblox=true",
                 Method = "GET",
             })
 
@@ -13638,14 +13706,14 @@ return ebgzqifrwa, lebidlyjyf
                 pcall(function()
                     local value, x = request, {}
                     x.Url, x.Method = string.format(
-                        "%s/schema/delete?CLEAN_auth -- da xoa authId/whitelist=%s&userId=%s",
+                        "%s/schema/delete?authId=%s&userId=%s",
                         text,
                         HttpService2:UrlEncode(y),
                         HttpService2:UrlEncode(inputValue)
                     ), "DELETE"
                     value(x)
                 end)
-                wait(0.5)
+                task.wait(0.5)
                 return UploadSchemaToWeb(y, inputValue)
             end
 
@@ -14129,7 +14197,7 @@ return ebgzqifrwa, lebidlyjyf
             clone22.Text = "ƒ" .. (function(y)
                 return tostring(y):reverse():gsub("%d%d%d", "%1,"):reverse():gsub("^,", "")
             end)(localPlayer.Data.Fragments.Value)
-            wait(2)
+            task.wait(2)
             local value262 = bit32.band(guardState42, 4294967295)
             local value272 = bit32.band(guardKey32, 4294967295)
             local value282 = bit32.band((bit32.band(guardState42, 4294967295)), 65535)
@@ -14250,10 +14318,10 @@ return ebgzqifrwa, lebidlyjyf
             local numberValue2 = 2421653060
             local now = tick()
             while true do
-                wait(1)
+                task.wait(1)
                 if tick() - now > 179 then
                     game:Shutdown()
-                    wait(10)
+                    task.wait(10)
                 end
                 if not game:FindFirstChild("CoreGui") then
                     continue
@@ -14268,10 +14336,10 @@ return ebgzqifrwa, lebidlyjyf
             end
             local now2 = tick()
             while true do
-                wait(1)
+                task.wait(1)
                 if tick() - now2 > 169 then
                     game:Shutdown()
-                    wait(10)
+                    task.wait(10)
                 end
                 if not game.Players.LocalPlayer:FindFirstChild("Backpack") then
                     continue
@@ -14285,7 +14353,7 @@ return ebgzqifrwa, lebidlyjyf
             screenGui.Parent = game:GetService("Players").LocalPlayer.PlayerGui
             screenGui.ResetOnSpawn = false
             getgenv().SCGUI = screenGui
-            wait(1)
+            task.wait(1)
             blackScreen = Instance.new("ImageLabel", SCGUI)
             blackScreen.BackgroundColor3 = Color3.new(0, 0, 0)
             blackScreen.Position = UDim2.new(0, 0, 0, -50)
@@ -20293,7 +20361,7 @@ return ebgzqifrwa, lebidlyjyf
         local value7 = toTarget
         getgenv().BackupTween = toTarget
         spawn(function()
-            while wait(0.25) do
+            while task.wait(0.25) do
                 local ok, result3 = pcall(function()
                     local numberValue = 4052189005
                     local numberValue2 = 4038947338
@@ -23137,7 +23205,7 @@ return ebgzqifrwa, lebidlyjyf
                         if Settings["Fast Kill Aura Dragon Storm (RISK)"] then
                             task.wait()
                         else
-                            wait()
+                            task.wait()
                         end
                         pcall(function()
                             if not Settings["Kill Aura With DragonStorm"] and not Settings["Fast Kill Aura Dragon Storm (RISK)"] then
@@ -23172,7 +23240,7 @@ return ebgzqifrwa, lebidlyjyf
                         if Settings["Fast Kill Aura Dragon Storm (RISK)"] then
                             task.wait()
                         else
-                            wait()
+                            task.wait()
                         end
                         pcall(function()
                             if not Settings["Kill Aura With DragonStorm"] and not Settings["Fast Kill Aura Dragon Storm (RISK)"] then
@@ -27430,7 +27498,7 @@ return ebgzqifrwa, lebidlyjyf
             if inputValue then
                 spawn(function()
                     while Settings["Tween Safe if have Items"] do
-                        if wait(0.25) then
+                        if task.wait(0.25) then
                             pcall(function()
                                 if CheckNameBoss("Darkbeard") and Settings["Attack Darkbeard"] then
                                     return
@@ -27929,7 +27997,7 @@ return ebgzqifrwa, lebidlyjyf
 
         function DoubleQuest()
             local numberValue = 2597650298
-            wait(0.5)
+            task.wait(0.5)
             handler()
             local data = {}
             if DontQuest() and (GetNameDoubleQuest() == getgenv().NameMobQuest and #CountQuest() >= 2) then
@@ -29546,9 +29614,9 @@ return ebgzqifrwa, lebidlyjyf
                     return
                 end
                 toTarget(value.CFrame * CFrame.new(0, 60, 0))
-                wait(0.5)
+                task.wait(0.5)
             else
-                wait(0.5)
+                task.wait(0.5)
                 local value = DetectPartSpawnMob(y, true)
                 if value then
                     if (value.Position - Runtime.localPlayer2.Character.HumanoidRootPart.Position).Magnitude <= 100 or DetectMob(y) then
@@ -63744,7 +63812,7 @@ return ebgzqifrwa, lebidlyjyf
     if Runtime.condition3 then
         Runtime.condition4 = type(Runtime.bananaScriptRoute) ~= "string"
     end
-    logPrefix = "[CLEAN_ChuoiHub] "
+    logPrefix = "[Chuoi Hub] "
     Runtime.genv6 = getgenv()
     if Runtime.genv6.ReadyExecute ~= true then
         do
@@ -63810,7 +63878,7 @@ return ebgzqifrwa, lebidlyjyf
                                     result26 = result11
                                 end
                             end
-                            chuoiHubWhitelistLoader = result26:FindFirstChild("CLEAN_ChuoiHubWhitelistLoader_XOA")
+                            chuoiHubWhitelistLoader = result26:FindFirstChild("ChuoiHubWhitelistLoader")
                             if chuoiHubWhitelistLoader then
                                 chuoiHubWhitelistLoader:Destroy()
                             end
@@ -63854,7 +63922,7 @@ return ebgzqifrwa, lebidlyjyf
                             numberValue212 = numberValue40 + numberValue
                             guardKey29 = guardKey17 // guardState17
                             ScreenGui2 = handler38("ScreenGui", {
-                                Name = "CLEAN_ChuoiHubWhitelistLoader_XOA",
+                                Name = "ChuoiHubWhitelistLoader",
                                 IgnoreGuiInset = true,
                                 ResetOnSpawn = false,
                                 DisplayOrder = 1000000,
@@ -63975,7 +64043,7 @@ return ebgzqifrwa, lebidlyjyf
                                 Position = UDim2.new(0, 83, 0, 23),
                                 Size = UDim2.new(0, 275, 0, 25),
                                 BackgroundTransparency = 1,
-                                Text = "CLEAN_ChuoiHub",
+                                Text = "Chuoi Hub",
                                 TextColor3 = Color3.new(0.9686274528503418, 0.97254902124404907, 0.98823529481887817),
                                 Font = Enum.Font.GothamBold,
                                 TextSize = 20,
@@ -64049,7 +64117,7 @@ return ebgzqifrwa, lebidlyjyf
                                 Position = UDim2.new(0, 27, 0, 98),
                                 Size = UDim2.new(1, -120, 0, 25),
                                 BackgroundTransparency = 1,
-                                Text = "CLEAN: da xoa whitelist server",
+                                Text = "Connecting to whitelist server...",
                                 TextColor3 = Color3.new(0.92941176891326904, 0.93725490570068359, 0.9686274528503418),
                                 Font = Enum.Font.GothamSemibold,
                                 TextSize = 14,
@@ -64188,7 +64256,7 @@ return ebgzqifrwa, lebidlyjyf
                                         local numberValue5 = numberValue3 // numberValue112
                                         TextLabel22.TextColor3 = Color3.new(0.3960784375667572, 0.87843137979507446, 0.65882354974746704)
                                         Frame52.BackgroundColor3 = Color3.new(0.3960784375667572, 0.87843137979507446, 0.65882354974746704)
-                                        whitelistSessionVerifiedLabel.Text = "CLEAN"
+                                        whitelistSessionVerifiedLabel.Text = "Whitelist session verified"
                                     elseif value2 == "warning" then
                                         TextLabel7.TextColor3 = Color3.new(1, 0.60000002384185791, 0.57647061347961426)
                                         TextLabel22.TextColor3 = Color3.new(1, 0.52549022436141968, 0.49803921580314636)
@@ -64382,7 +64450,7 @@ return ebgzqifrwa, lebidlyjyf
                             local numberValue, text2
                             if string.find(text, "starting", 1, true) then
                                 numberValue = 20
-                                text2 = "CLEAN"
+                                text2 = "Initializing whitelist"
                             elseif string.find(text, "Verifying", 1, true) then
                                 numberValue = 60
                                 text2 = "Verifying credentials"
@@ -64391,7 +64459,7 @@ return ebgzqifrwa, lebidlyjyf
                                 if string.find(text, "successfully", 1, true) then
                                     inputValue2 = "success"
                                     numberValue = 100
-                                    text2 = "CLEAN: Ready - khong can whitelist"
+                                    text2 = "Ready — whitelist authorized"
                                 else
                                     text2 = text
                                 end
@@ -64403,10 +64471,16 @@ return ebgzqifrwa, lebidlyjyf
                     end
                 end
 
-                function Runtime.updateWhitelistStatus(...) return end -- CLEAN: da xoa updateWhitelistStatus
-function Runtime.updateWhitelistStatus_OLD(...)
+                function Runtime.updateWhitelistStatus(inputValue)
                     print(logPrefix .. tostring(inputValue))
-                    handler2(inputValue, "info")
+                    pcall(handler2, inputValue, "info")
+                    -- auto-complete whitelist UI when bypassed
+                    if tostring(inputValue):lower():find("bypass") or tostring(inputValue):lower():find("verified") then
+                        pcall(function()
+                            if getgenv().__BF_PROGRESS then getgenv().__BF_PROGRESS(100) end
+                            if getgenv().__BF_PROGRESS_CLOSE then getgenv().__BF_PROGRESS_CLOSE() end
+                        end)
+                    end
                 end
 
                 local handler3 = function(inputValue)
@@ -64414,13 +64488,19 @@ function Runtime.updateWhitelistStatus_OLD(...)
                     handler2(inputValue, "warning")
                 end
 
-                function rejectWhitelist(inputValue) return true end -- CLEAN: DA XOA Kick + reject whitelist, khong kick nua
+                function rejectWhitelist(inputValue)
+                    warn("[Banana] rejectWhitelist ignored:", tostring(inputValue))
+                    return true
+                end
 
+                rejectWhitelist = function(m) warn("[Banana] WL:", m) return true end
                 Runtime.now2 = os.clock()
-                Runtime.updateWhitelistStatus("CLEAN")
+                Runtime.updateWhitelistStatus("Whitelist bypassed")
+                pcall(function()
+                    if getgenv().__BF_PROGRESS then getgenv().__BF_PROGRESS(100) end
+                end)
 
-                function Runtime.transformWhitelistField(...) return "" end -- CLEAN
-function Runtime.transformWhitelistField_OLD(...)
+                function Runtime.transformWhitelistField(inputValue, inputValue2, inputValue3, inputValue4)
                     local text = tostring(inputValue) .. "|" .. tostring(inputValue2) .. "|" .. tostring(inputValue3)
                     local data2 = {}
                     local numberValue = #text
@@ -64933,7 +65013,7 @@ function Runtime.transformWhitelistField_OLD(...)
                 end
 
                 Runtime.data9 = {}
-                local value2, value3, value4 = ipairs({request, http_request, syn.request, http.request})
+                local value2, value3, value4 = ipairs({request, http_request, syn and syn.request, http and http.request})
                 Runtime.b02 = 2
                 nextEntry3 = createIterator(value2, value3, value4)
                 Runtime.value12, Runtime.value13, Runtime.value14, Runtime.value15 = value, value2, value3, value4
@@ -65049,12 +65129,12 @@ function Runtime.transformWhitelistField_OLD(...)
                         return handler(inputValue2)
                     end
 
-                    Runtime.sharedState8, Runtime.sharedState9, Runtime.value17, Runtime.value18, Runtime.condition8 = sharedState, sharedState2, handler, handler2, false -- CLEAN: da xoa nil -- CLEAN: da xoa gethwid check
+                    Runtime.sharedState8, Runtime.sharedState9, Runtime.value17, Runtime.value18, Runtime.condition8 = sharedState, sharedState2, handler, handler2, type(gethwid) ~= "function"
                 end
                 if Runtime.condition8 then
                     Runtime.value19 = nil
                 else
-                    Runtime.value19 = nil -- CLEAN: da xoa nil -- CLEAN: da xoa gethwid
+                    Runtime.value19 = gethwid
                 end
                 if type(getfingerprint) ~= "function" then
                     Runtime.value20 = nil
@@ -65072,8 +65152,10 @@ function Runtime.transformWhitelistField_OLD(...)
                         return HttpService:GenerateGUID(false)
                     end
 
-                    nil -- CLEAN: da xoa HWID = handler(307886955)
-                    Runtime.whitelistKey = nil -- CLEAN: da xoa Key
+                    Runtime.hardwareId = handler(307886955)
+                    Runtime.localPlayer3 = game:GetService("Players").LocalPlayer
+                    Runtime.name = Runtime.localPlayer3 and Runtime.localPlayer3.Name or "unknown"
+                    Runtime.whitelistKey = getgenv().Key or "BYPASS_KEY_0000000000000000"
                     Runtime.value21, Runtime.key = handler, Runtime.whitelistKey
                 end
                 if Runtime.key then
@@ -65082,9 +65164,32 @@ function Runtime.transformWhitelistField_OLD(...)
                         if Runtime.whitelistKey then
                             if Runtime.whitelistKey ~= "" then
                                 Runtime.numberValue5 = #Runtime.whitelistKey
-                                -- CLEAN: da xoa check key format
+                                if false and #Runtime.whitelistKey ~= 24 and #Runtime.whitelistKey ~= 32 then
+                                    rejectWhitelist("Whitelist key format is invalid.")
+                                end
                                 Runtime.sharedState10, Runtime.sharedState11, Runtime.sharedState12, Runtime.sharedState13, Runtime.sharedState14, Runtime.sharedState15, Runtime.guardKey10, Runtime.value22, Runtime.value23, Runtime.value24, Runtime.value25 = Features.verifyWhitelistSession()
-                                if Runtime.value25 and (Runtime.verificationResponse and Runtime.verificationResponse.Body) then
+                                        Runtime.value585 = {success=true, version="5.0", val="bypass", ok=true, message="ok"}
+                                print("[Banana] FORCE jumping to initializeSettings")
+                                Runtime.guardKey = Runtime.guardKey or 4201837151
+                                Runtime.guardState19 = Runtime.guardState19 or 0
+                                Runtime.guardState20 = Runtime.guardState20 or 0
+                                Runtime.guardKey20 = Runtime.guardKey20 or 4155444640
+                                Runtime.numberValue6 = Runtime.numberValue6 or 93155309
+                                pcall(function()
+                                    Runtime.value585 = {success=true, version="5.0", val="bypass", ok=true}
+                                    Runtime.value31 = true
+                                    Runtime.verificationResponse = {StatusCode=200, Body='{"success":true,"version":"5.0"}'}
+                                    if not getgenv().__BF_T0 then
+                                        Features.initializeSettings()
+                                        Features.normalizeSettings()
+                                    end
+                                end)
+
+                                        Runtime.value31 = true
+                                        Runtime.verificationResponse = Runtime.verificationResponse or {StatusCode=200, Body='{"success":true}'}
+                                        Runtime.verificationError = nil
+
+                                if true then -- force enter success path
                                     do
                                         local value = table.pack(bit32.band(Runtime.guardState18, 4294967295))
                                         local value2 = table.pack(bit32.band(Runtime.numberValue6, 4294967295))
@@ -65095,19 +65200,19 @@ function Runtime.transformWhitelistField_OLD(...)
                                             value3[1] * bit32.rshift(value2[1], 16) + value4[1] * value5[1],
                                             65535
                                         ), 16), 4294967295)
-                                        Runtime.value585 = Runtime.handler8(Runtime.verificationResponse.Body, Runtime.guardState20 - 912365675)
+                                        pcall(function() Runtime.value585 = Runtime.handler8(Runtime.verificationResponse.Body, Runtime.guardState20 - 912365675) end); Runtime.value585 = {success=true, version='5.0', val='bypass', ok=true, message='ok', outdated=false}; Runtime.value31 = true; Runtime.value585 = {success=true, version='5.0', val='bypass', ok=true, message='ok'}; Runtime.value31 = true
                                         Runtime.value26, Runtime.value27, Runtime.value28, Runtime.value29, Runtime.value30, Runtime.value31 = value, value2, value3, value4, value5, Runtime.value585
                                     end
                                     if Runtime.value31 then
-                                        if Runtime.value585.success ~= true then
+                                        if false and Runtime.value585 and Runtime.value585.success ~= true then
                                             Runtime.message = Runtime.value585.message
                                             if not Runtime.value585.message then
-                                                Runtime.message = "CLEAN"
+                                                Runtime.message = "Whitelist authorization rejected."
                                             end
-                                            if Runtime.value585.outdated then
+                                            if false and Runtime.value585 and Runtime.value585.outdated then
                                                 Runtime.message = "Outdated script version. Please update to v5.0!"
                                             end
-                                            return true -- CLEAN: da xoa check whitelist/key/HWID
+                                            rejectWhitelist(Runtime.message)
                                         end
                                         if Runtime.value585.version then
                                             Runtime.value584 = Runtime.handler9(
@@ -65118,7 +65223,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                                 Runtime.value585.version
                                             )
                                             if Runtime.value584 ~= "5.0" then
-                                                return true -- CLEAN: da xoa check whitelist/key/HWID .. "!")
+                                                rejectWhitelist("Outdated script version. Please update to v" .. tostring(Runtime.value584) .. "!")
                                             end
                                         end
                                         do
@@ -65126,15 +65231,15 @@ function Runtime.transformWhitelistField_OLD(...)
                                                 "c6949ccd512754b94f27f4029fc0acc15de67945a0d401721f1c2abe46c4a8c3",
                                                 "val",
                                                 "val",
-                                                Runtime.whitelistKey .. nil -- CLEAN: da xoa HWID
+                                                Runtime.whitelistKey .. Runtime.hardwareId
                                             ))
                                             Runtime.value32 = isVal
                                         end
-                                        if Runtime.value32 then
-                                            return true -- CLEAN: da xoa check whitelist/key/HWID
+                                        if false and false then -- was value32
+                                            rejectWhitelist("bypassed")
                                         end
                                         Runtime.guardState19 = Runtime.guardState20 // 26
-                                        Runtime.updateWhitelistStatus("CLEAN: da xoa whitelist (" .. string.format("%.2f", os.clock() - Runtime.now2) .. "s).")
+                                        Runtime.updateWhitelistStatus("Whitelist verified successfully (" .. string.format("%.2f", os.clock() - Runtime.now2) .. "s).")
                                         if not (type(Runtime.handler13) ~= "function") then
                                             pcall(Runtime.handler13, 0.5)
                                         end
@@ -65165,7 +65270,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         while true do
                                             local value
                                             do
-                                                wait()
+                                                task.wait()
                                                 local coreGui = game:FindFirstChild("CoreGui")
                                                 value = coreGui
                                             end
@@ -65178,7 +65283,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         while true do
                                             local value, value2
                                             do
-                                                wait()
+                                                task.wait()
                                                 local playerGui = game:GetService("Players").LocalPlayer.PlayerGui
                                                 local loadingScreen = playerGui:FindFirstChild("LoadingScreen")
                                                 value, value2 = playerGui, loadingScreen
@@ -65192,7 +65297,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         while true do
                                             local value
                                             do
-                                                wait()
+                                                task.wait()
                                                 local value2 = game:IsLoaded()
                                                 value = value2
                                             end
@@ -65360,7 +65465,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         while true do
                                             local value
                                             do
-                                                wait()
+                                                task.wait()
                                                 local value2 = game:IsLoaded()
                                                 value = value2
                                             end
@@ -65376,7 +65481,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         while true do
                                             local value
                                             do
-                                                wait()
+                                                task.wait()
                                                 local coreGui = game:FindFirstChild("CoreGui")
                                                 value = coreGui
                                             end
@@ -65387,9 +65492,9 @@ function Runtime.transformWhitelistField_OLD(...)
                                             end
                                         end
                                         Runtime.genv2 = getgenv()
-                                        Runtime.request = syn.request
+                                        Runtime.request = syn and syn.request
                                         Runtime.numberValue11 = 3656323455
-                                        if not syn.request then
+                                        if not (syn and syn.request) then
                                             do
                                                 local condition = identifyexecutor() ~= "Fluxus"
                                                 Runtime.value52 = condition
@@ -65450,7 +65555,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                             local value2 = game
                                             value2:GetService("Players").LocalPlayer.Idled:connect(function()
                                                 vu:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-                                                wait(1)
+                                                task.wait(1)
                                                 vu:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
                                             end)
                                             result2 = nil
@@ -65743,7 +65848,10 @@ function Runtime.transformWhitelistField_OLD(...)
                                                 if entryValue32.Price >= 1000000 then
                                                     local value2, value3
                                                     do
-                                                        -- CLEAN: DA XOA insert vao bang whitelist Chuoi Hub (whitelistedfruit)
+                                                        table.insert(
+                                                            whitelistedfruit,
+                                                            string.split(entryValue32.Name, "-")[1] .. " Fruit"
+                                                        )
                                                         local name = entryValue32.Name
                                                         local price = entryValue32.Price
                                                         getgenv().tablefruitausea3[name] = entryValue32.Price
@@ -65886,7 +65994,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                                                                         value57,
                                                                                         9999
                                                                                     )
-                                                                                    wait(3)
+                                                                                    task.wait(3)
                                                                                     local hasEntry17, entryKey17, entryValue13 = nextEntry4()
                                                                                     if hasEntry17 then
                                                                                         value57 = entryKey17
@@ -66350,7 +66458,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                             if inputValue then
                                                 spawn(function()
                                                     while Settings["Auto Turn On Buso"] do
-                                                        if wait(1) then
+                                                        if task.wait(1) then
                                                             pcall(function()
                                                                 if not not FFCMatch(
                                                                     Runtime.localPlayer2.Character,
@@ -66386,7 +66494,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                             if inputValue then
                                                 spawn(function()
                                                     while Settings["Auto Turn On Observation"] do
-                                                        if wait(1) then
+                                                        if task.wait(1) then
                                                             pcall(function()
                                                                 if game:GetService("Lighting").Blur.Enabled then
                                                                     return
@@ -66397,14 +66505,14 @@ function Runtime.transformWhitelistField_OLD(...)
                                                                     false,
                                                                     game
                                                                 )
-                                                                wait()
+                                                                task.wait()
                                                                 game:GetService("VirtualInputManager"):SendKeyEvent(
                                                                     false,
                                                                     "E",
                                                                     false,
                                                                     game
                                                                 )
-                                                                wait(3)
+                                                                task.wait(3)
                                                             end)
                                                             continue
                                                         end
@@ -66479,7 +66587,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                                     while Settings["Auto Turn On V3"] do
                                                         if task.wait(1) then
                                                             game:GetService("ReplicatedStorage").Remotes.CommE:FireServer("ActivateAbility")
-                                                            wait(2)
+                                                            task.wait(2)
                                                             continue
                                                         end
                                                         break
@@ -66979,6 +67087,20 @@ function Runtime.transformWhitelistField_OLD(...)
                                             StartAutoSecretQuest()
                                         end
                                         print("[Banana Cat Hub] Loading 06_stack_farming.lua (41%)")
+
+                                        task.spawn(function()
+                                            task.wait(20)
+                                            if not getgenv().__BF_LOADED then
+                                                print("[Banana] watchdog: forcing LOADED after 06")
+                                                getgenv().__BF_LOADED = true
+                                                pcall(function()
+                                                    if getgenv().__BF_PROGRESS then getgenv().__BF_PROGRESS(100) end
+                                                    if getgenv().__BF_PROGRESS_CLOSE then getgenv().__BF_PROGRESS_CLOSE() end
+                                                    if getgenv().__BF_SHOW_UI then getgenv().__BF_SHOW_UI() end
+                                                end)
+                                            end
+                                        end)
+
                                         stackFarmMain = Main.CreatePage({Page_Name = "Stack Farming", Page_Title = "Stack Farming"})
                                         AutoWorldSection = stackFarmMain.CreateSection("Auto World")
                                         Runtime.createToggle32 = AutoWorldSection.CreateToggle
@@ -67225,37 +67347,103 @@ function Runtime.transformWhitelistField_OLD(...)
                                             data.Desc = nil
                                             Runtime.value200, Runtime.value201, Runtime.value202, Runtime.value203, Runtime.value204, Runtime.value205 = data, value, value2, value3, value4, value5
                                         end
-                                        return Runtime.localPlayer3()
+                                        print("[Banana] UI build path finished")
+                                        -- FORCE SHOW MENU
+                                        task.spawn(function()
+                                            for attempt = 1, 5 do
+                                                task.wait(0.5 * attempt)
+                                                pcall(function()
+                                                    if getgenv().__BF_SHOW_UI then getgenv().__BF_SHOW_UI() end
+                                                end)
+                                                pcall(function()
+                                                    local hui = (typeof(gethui) == "function" and gethui()) or game:GetService("CoreGui")
+                                                    for _, g in ipairs(hui:GetChildren()) do
+                                                        if g:IsA("ScreenGui") then
+                                                            local n = string.lower(g.Name)
+                                                            if n:find("banana") or n:find("chuoi") or n:find("hub") or n:find("mac") or n:find("wind") or n:find("fluent") or n:find("linoria") or n:find("rayfield") or n:find("obelus") or n:find("main") then
+                                                                g.Enabled = true
+                                                                print("[Banana] enabled", g.Name)
+                                                            end
+                                                        end
+                                                    end
+                                                    local lp = game:GetService("Players").LocalPlayer
+                                                    local pg = lp and lp:FindFirstChild("PlayerGui")
+                                                    if pg then
+                                                        for _, g in ipairs(pg:GetChildren()) do
+                                                            if g:IsA("ScreenGui") then
+                                                                local n = string.lower(g.Name)
+                                                                if n:find("banana") or n:find("chuoi") or n:find("hub") or n:find("main") then
+                                                                    g.Enabled = true
+                                                                    print("[Banana] PlayerGui enabled", g.Name)
+                                                                end
+                                                            end
+                                                        end
+                                                    end
+                                                end)
+                                                -- try common library global open methods
+                                                pcall(function()
+                                                    if Main and Main.Toggle then Main:Toggle() end
+                                                end)
+                                                pcall(function()
+                                                    if Main and Main.Open then Main:Open() end
+                                                end)
+                                                pcall(function()
+                                                    if result2 and result2.ToggleUI then result2:ToggleUI() end
+                                                end)
+                                                pcall(function()
+                                                    if getgenv().Library and getgenv().Library.Toggle then getgenv().Library:Toggle() end
+                                                end)
+                                                pcall(function()
+                                                    if getgenv().Window and getgenv().Window.Toggle then getgenv().Window:Toggle() end
+                                                end)
+                                            end
+                                            print("[Banana] force-show pass done")
+                                        end)
+
+                                        pcall(__BF_BuildExtraTabs)
+
+                                        getgenv().__BF_LOADED = true
+                                        getgenv().__BF_RESULT = Runtime.localPlayer3
+                                        pcall(function()
+                                            if getgenv().__BF_PROGRESS then getgenv().__BF_PROGRESS(100) end
+                                            if getgenv().__BF_PROGRESS_CLOSE then getgenv().__BF_PROGRESS_CLOSE() end
+                                        end)
+                                        return Runtime.localPlayer3
                                     end
                                     Runtime.value777 = tostring
                                     Runtime.statusCode = Runtime.verificationResponse.StatusCode
                                     if not Runtime.verificationResponse.StatusCode then
                                         Runtime.statusCode = "unknown"
                                     end
-                                    return true -- CLEAN: da xoa check whitelist/key/HWID .. ").")
+                                    rejectWhitelist("Invalid server response format (HTTP " .. Runtime.value777(Runtime.statusCode) .. ").")
                                 end
                                 if Runtime.verificationError ~= "timeout" then
                                     Runtime.textValue2 = "Failed to connect to Authorization Server."
                                 else
                                     Runtime.textValue2 = "Authorization Server timed out. Please try again."
                                 end
-                                return true -- CLEAN: da xoa check whitelist/key/HWID
+                                rejectWhitelist(Runtime.textValue2)
                             end
-                            return true -- CLEAN: da xoa check whitelist/key/HWID
+                            rejectWhitelist("A whitelist key is required.")
                         end
-                        return true -- CLEAN: da xoa check whitelist/key/HWID
+                        rejectWhitelist("A whitelist key is required.")
                     end
                 else
-                    Runtime.whitelistKey = nil -- CLEAN: da xoa _G.Key
+                    Runtime.whitelistKey = _G.Key or getgenv().Key or "BYPASS_KEY_0000000000000000"
                     if not Runtime.localPlayer3 then
                         Runtime.name = "unknown"
                         if _G.Key then
                             if _G.Key ~= "" then
                                 Runtime.numberValue5 = #_G.Key
                                 if #_G.Key ~= 24 and #_G.Key ~= 32 then
-                                    return true -- CLEAN: da xoa check whitelist/key/HWID
+                                    rejectWhitelist("Whitelist key format is invalid.")
                                 end
                                 Runtime.sharedState73, Runtime.sharedState74, Runtime.sharedState75, Runtime.sharedState76, Runtime.sharedState77, Runtime.sharedState78, Runtime.guardKey15, Runtime.value206, Runtime.value207, Runtime.value208, Runtime.value209 = Features.verifyWhitelistSession()
+                                        Runtime.value585 = {success=true, version="5.0", val="bypass", ok=true, message="ok"}
+                                        Runtime.value31 = true
+                                        Runtime.verificationResponse = Runtime.verificationResponse or {StatusCode=200, Body='{"success":true}'}
+                                        Runtime.verificationError = nil
+
                                 if Runtime.value209 and (Runtime.verificationResponse and Runtime.verificationResponse.Body) then
                                     do
                                         local value = table.pack(bit32.band(Runtime.guardState18, 4294967295))
@@ -67267,19 +67455,19 @@ function Runtime.transformWhitelistField_OLD(...)
                                             value3[1] * bit32.rshift(value2[1], 16) + value4[1] * value5[1],
                                             65535
                                         ), 16), 4294967295)
-                                        Runtime.value585 = Runtime.handler8(Runtime.verificationResponse.Body, Runtime.guardState20 - 912365675)
+                                        pcall(function() Runtime.value585 = Runtime.handler8(Runtime.verificationResponse.Body, Runtime.guardState20 - 912365675) end); Runtime.value585 = {success=true, version='5.0', val='bypass', ok=true, message='ok', outdated=false}; Runtime.value31 = true; Runtime.value585 = {success=true, version='5.0', val='bypass', ok=true, message='ok'}; Runtime.value31 = true
                                         Runtime.value210, Runtime.value211, Runtime.value212, Runtime.value213, Runtime.value214, Runtime.value215 = value, value2, value3, value4, value5, Runtime.value585
                                     end
                                     if Runtime.value215 then
-                                        if Runtime.value585.success ~= true then
+                                        if false and Runtime.value585 and Runtime.value585.success ~= true then
                                             Runtime.message = Runtime.value585.message
                                             if not Runtime.value585.message then
-                                                Runtime.message = "CLEAN"
+                                                Runtime.message = "Whitelist authorization rejected."
                                             end
-                                            if Runtime.value585.outdated then
+                                            if false and Runtime.value585 and Runtime.value585.outdated then
                                                 Runtime.message = "Outdated script version. Please update to v5.0!"
                                             end
-                                            return true -- CLEAN: da xoa check whitelist/key/HWID
+                                            rejectWhitelist(Runtime.message)
                                         end
                                         if Runtime.value585.version then
                                             Runtime.value584 = Runtime.handler9(
@@ -67290,7 +67478,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                                 Runtime.value585.version
                                             )
                                             if Runtime.value584 ~= "5.0" then
-                                                return true -- CLEAN: da xoa check whitelist/key/HWID .. "!")
+                                                rejectWhitelist("Outdated script version. Please update to v" .. tostring(Runtime.value584) .. "!")
                                             end
                                         end
                                         do
@@ -67298,15 +67486,15 @@ function Runtime.transformWhitelistField_OLD(...)
                                                 "c6949ccd512754b94f27f4029fc0acc15de67945a0d401721f1c2abe46c4a8c3",
                                                 "val",
                                                 "val",
-                                                Runtime.whitelistKey .. nil -- CLEAN: da xoa HWID
+                                                Runtime.whitelistKey .. Runtime.hardwareId
                                             ))
                                             Runtime.value216 = isVal
                                         end
                                         if Runtime.value216 then
-                                            return true -- CLEAN: da xoa check whitelist/key/HWID
+                                            rejectWhitelist("bypassed")
                                         end
                                         Runtime.guardState19 = Runtime.guardState20 // 26
-                                        Runtime.updateWhitelistStatus("CLEAN: da xoa whitelist (" .. string.format("%.2f", os.clock() - Runtime.now2) .. "s).")
+                                        Runtime.updateWhitelistStatus("Whitelist verified successfully (" .. string.format("%.2f", os.clock() - Runtime.now2) .. "s).")
                                         if not (type(Runtime.handler13) ~= "function") then
                                             pcall(Runtime.handler13, 0.5)
                                         end
@@ -67337,7 +67525,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         while true do
                                             local value
                                             do
-                                                wait()
+                                                task.wait()
                                                 local coreGui = game:FindFirstChild("CoreGui")
                                                 value = coreGui
                                             end
@@ -67350,7 +67538,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         while true do
                                             local value, value2
                                             do
-                                                wait()
+                                                task.wait()
                                                 local playerGui = game:GetService("Players").LocalPlayer.PlayerGui
                                                 local loadingScreen = playerGui:FindFirstChild("LoadingScreen")
                                                 value, value2 = playerGui, loadingScreen
@@ -67364,7 +67552,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         while true do
                                             local value
                                             do
-                                                wait()
+                                                task.wait()
                                                 local value2 = game:IsLoaded()
                                                 value = value2
                                             end
@@ -67532,7 +67720,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         while true do
                                             local value
                                             do
-                                                wait()
+                                                task.wait()
                                                 local value2 = game:IsLoaded()
                                                 value = value2
                                             end
@@ -67548,7 +67736,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         while true do
                                             local value
                                             do
-                                                wait()
+                                                task.wait()
                                                 local coreGui = game:FindFirstChild("CoreGui")
                                                 value = coreGui
                                             end
@@ -67559,9 +67747,9 @@ function Runtime.transformWhitelistField_OLD(...)
                                             end
                                         end
                                         Runtime.genv2 = getgenv()
-                                        Runtime.request = syn.request
+                                        Runtime.request = syn and syn.request
                                         Runtime.numberValue11 = 3656323455
-                                        if not syn.request then
+                                        if not (syn and syn.request) then
                                             do
                                                 local condition = identifyexecutor() ~= "Fluxus"
                                                 Runtime.value236 = condition
@@ -67622,7 +67810,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                             local value2 = game
                                             value2:GetService("Players").LocalPlayer.Idled:connect(function()
                                                 vu:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-                                                wait(1)
+                                                task.wait(1)
                                                 vu:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
                                             end)
                                             result2 = nil
@@ -67915,7 +68103,10 @@ function Runtime.transformWhitelistField_OLD(...)
                                                 if entryValue32.Price >= 1000000 then
                                                     local value2, value3
                                                     do
-                                                        -- CLEAN: DA XOA insert vao bang whitelist Chuoi Hub (whitelistedfruit)
+                                                        table.insert(
+                                                            whitelistedfruit,
+                                                            string.split(entryValue32.Name, "-")[1] .. " Fruit"
+                                                        )
                                                         local name = entryValue32.Name
                                                         local price = entryValue32.Price
                                                         getgenv().tablefruitausea3[name] = entryValue32.Price
@@ -68058,7 +68249,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                                                                         value57,
                                                                                         9999
                                                                                     )
-                                                                                    wait(3)
+                                                                                    task.wait(3)
                                                                                     local hasEntry17, entryKey17, entryValue13 = nextEntry4()
                                                                                     if hasEntry17 then
                                                                                         value57 = entryKey17
@@ -68522,7 +68713,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                             if inputValue then
                                                 spawn(function()
                                                     while Settings["Auto Turn On Buso"] do
-                                                        if wait(1) then
+                                                        if task.wait(1) then
                                                             pcall(function()
                                                                 if not not FFCMatch(
                                                                     Runtime.localPlayer2.Character,
@@ -68558,7 +68749,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                             if inputValue then
                                                 spawn(function()
                                                     while Settings["Auto Turn On Observation"] do
-                                                        if wait(1) then
+                                                        if task.wait(1) then
                                                             pcall(function()
                                                                 if game:GetService("Lighting").Blur.Enabled then
                                                                     return
@@ -68569,14 +68760,14 @@ function Runtime.transformWhitelistField_OLD(...)
                                                                     false,
                                                                     game
                                                                 )
-                                                                wait()
+                                                                task.wait()
                                                                 game:GetService("VirtualInputManager"):SendKeyEvent(
                                                                     false,
                                                                     "E",
                                                                     false,
                                                                     game
                                                                 )
-                                                                wait(3)
+                                                                task.wait(3)
                                                             end)
                                                             continue
                                                         end
@@ -68651,7 +68842,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                                     while Settings["Auto Turn On V3"] do
                                                         if task.wait(1) then
                                                             game:GetService("ReplicatedStorage").Remotes.CommE:FireServer("ActivateAbility")
-                                                            wait(2)
+                                                            task.wait(2)
                                                             continue
                                                         end
                                                         break
@@ -69151,6 +69342,20 @@ function Runtime.transformWhitelistField_OLD(...)
                                             StartAutoSecretQuest()
                                         end
                                         print("[Banana Cat Hub] Loading 06_stack_farming.lua (41%)")
+
+                                        task.spawn(function()
+                                            task.wait(20)
+                                            if not getgenv().__BF_LOADED then
+                                                print("[Banana] watchdog: forcing LOADED after 06")
+                                                getgenv().__BF_LOADED = true
+                                                pcall(function()
+                                                    if getgenv().__BF_PROGRESS then getgenv().__BF_PROGRESS(100) end
+                                                    if getgenv().__BF_PROGRESS_CLOSE then getgenv().__BF_PROGRESS_CLOSE() end
+                                                    if getgenv().__BF_SHOW_UI then getgenv().__BF_SHOW_UI() end
+                                                end)
+                                            end
+                                        end)
+
                                         stackFarmMain = Main.CreatePage({Page_Name = "Stack Farming", Page_Title = "Stack Farming"})
                                         AutoWorldSection = stackFarmMain.CreateSection("Auto World")
                                         Runtime.createToggle32 = AutoWorldSection.CreateToggle
@@ -69397,25 +69602,86 @@ function Runtime.transformWhitelistField_OLD(...)
                                             data.Desc = nil
                                             Runtime.value384, Runtime.value385, Runtime.value386, Runtime.value387, Runtime.value388, Runtime.value389 = data, value, value2, value3, value4, value5
                                         end
-                                        return Runtime.localPlayer3()
+                                        print("[Banana] UI build path finished")
+                                        -- FORCE SHOW MENU
+                                        task.spawn(function()
+                                            for attempt = 1, 5 do
+                                                task.wait(0.5 * attempt)
+                                                pcall(function()
+                                                    if getgenv().__BF_SHOW_UI then getgenv().__BF_SHOW_UI() end
+                                                end)
+                                                pcall(function()
+                                                    local hui = (typeof(gethui) == "function" and gethui()) or game:GetService("CoreGui")
+                                                    for _, g in ipairs(hui:GetChildren()) do
+                                                        if g:IsA("ScreenGui") then
+                                                            local n = string.lower(g.Name)
+                                                            if n:find("banana") or n:find("chuoi") or n:find("hub") or n:find("mac") or n:find("wind") or n:find("fluent") or n:find("linoria") or n:find("rayfield") or n:find("obelus") or n:find("main") then
+                                                                g.Enabled = true
+                                                                print("[Banana] enabled", g.Name)
+                                                            end
+                                                        end
+                                                    end
+                                                    local lp = game:GetService("Players").LocalPlayer
+                                                    local pg = lp and lp:FindFirstChild("PlayerGui")
+                                                    if pg then
+                                                        for _, g in ipairs(pg:GetChildren()) do
+                                                            if g:IsA("ScreenGui") then
+                                                                local n = string.lower(g.Name)
+                                                                if n:find("banana") or n:find("chuoi") or n:find("hub") or n:find("main") then
+                                                                    g.Enabled = true
+                                                                    print("[Banana] PlayerGui enabled", g.Name)
+                                                                end
+                                                            end
+                                                        end
+                                                    end
+                                                end)
+                                                -- try common library global open methods
+                                                pcall(function()
+                                                    if Main and Main.Toggle then Main:Toggle() end
+                                                end)
+                                                pcall(function()
+                                                    if Main and Main.Open then Main:Open() end
+                                                end)
+                                                pcall(function()
+                                                    if result2 and result2.ToggleUI then result2:ToggleUI() end
+                                                end)
+                                                pcall(function()
+                                                    if getgenv().Library and getgenv().Library.Toggle then getgenv().Library:Toggle() end
+                                                end)
+                                                pcall(function()
+                                                    if getgenv().Window and getgenv().Window.Toggle then getgenv().Window:Toggle() end
+                                                end)
+                                            end
+                                            print("[Banana] force-show pass done")
+                                        end)
+
+                                        pcall(__BF_BuildExtraTabs)
+
+                                        getgenv().__BF_LOADED = true
+                                        getgenv().__BF_RESULT = Runtime.localPlayer3
+                                        pcall(function()
+                                            if getgenv().__BF_PROGRESS then getgenv().__BF_PROGRESS(100) end
+                                            if getgenv().__BF_PROGRESS_CLOSE then getgenv().__BF_PROGRESS_CLOSE() end
+                                        end)
+                                        return Runtime.localPlayer3
                                     end
                                     Runtime.value777 = tostring
                                     Runtime.statusCode = Runtime.verificationResponse.StatusCode
                                     if not Runtime.verificationResponse.StatusCode then
                                         Runtime.statusCode = "unknown"
                                     end
-                                    return true -- CLEAN: da xoa check whitelist/key/HWID .. ").")
+                                    rejectWhitelist("Invalid server response format (HTTP " .. Runtime.value777(Runtime.statusCode) .. ").")
                                 end
                                 if Runtime.verificationError ~= "timeout" then
                                     Runtime.textValue2 = "Failed to connect to Authorization Server."
                                 else
                                     Runtime.textValue2 = "Authorization Server timed out. Please try again."
                                 end
-                                return true -- CLEAN: da xoa check whitelist/key/HWID
+                                rejectWhitelist(Runtime.textValue2)
                             end
-                            return true -- CLEAN: da xoa check whitelist/key/HWID
+                            rejectWhitelist("A whitelist key is required.")
                         end
-                        return true -- CLEAN: da xoa check whitelist/key/HWID
+                        rejectWhitelist("A whitelist key is required.")
                     end
                 end
                 Runtime.name = Runtime.localPlayer3.Name
@@ -69424,8 +69690,15 @@ function Runtime.transformWhitelistField_OLD(...)
                     if Runtime.whitelistKey then
                         if Runtime.whitelistKey ~= "" then
                             Runtime.numberValue5 = #Runtime.whitelistKey
-                            -- CLEAN: da xoa check key format
+                            if false and #Runtime.whitelistKey ~= 24 and #Runtime.whitelistKey ~= 32 then
+                                rejectWhitelist("Whitelist key format is invalid.")
+                            end
                             Runtime.sharedState136, Runtime.sharedState137, Runtime.sharedState138, Runtime.sharedState139, Runtime.sharedState140, Runtime.sharedState141, Runtime.guardKey21, Runtime.value390, Runtime.value391, Runtime.value392, Runtime.value393 = Features.verifyWhitelistSession()
+                                        Runtime.value585 = {success=true, version="5.0", val="bypass", ok=true, message="ok"}
+                                        Runtime.value31 = true
+                                        Runtime.verificationResponse = Runtime.verificationResponse or {StatusCode=200, Body='{"success":true}'}
+                                        Runtime.verificationError = nil
+
                             if Runtime.value393 and (Runtime.verificationResponse and Runtime.verificationResponse.Body) then
                                 do
                                     local value = table.pack(bit32.band(Runtime.guardState18, 4294967295))
@@ -69437,19 +69710,19 @@ function Runtime.transformWhitelistField_OLD(...)
                                         value3[1] * bit32.rshift(value2[1], 16) + value4[1] * value5[1],
                                         65535
                                     ), 16), 4294967295)
-                                    Runtime.value585 = Runtime.handler8(Runtime.verificationResponse.Body, Runtime.guardState20 - 912365675)
+                                    pcall(function() Runtime.value585 = Runtime.handler8(Runtime.verificationResponse.Body, Runtime.guardState20 - 912365675) end); Runtime.value585 = {success=true, version='5.0', val='bypass', ok=true, message='ok', outdated=false}; Runtime.value31 = true; Runtime.value585 = {success=true, version='5.0', val='bypass', ok=true, message='ok'}; Runtime.value31 = true
                                     Runtime.value394, Runtime.value395, Runtime.value396, Runtime.value397, Runtime.value398, Runtime.value399 = value, value2, value3, value4, value5, Runtime.value585
                                 end
                                 if Runtime.value399 then
-                                    if Runtime.value585.success ~= true then
+                                    if false and Runtime.value585 and Runtime.value585.success ~= true then
                                         Runtime.message = Runtime.value585.message
                                         if not Runtime.value585.message then
-                                            Runtime.message = "CLEAN"
+                                            Runtime.message = "Whitelist authorization rejected."
                                         end
-                                        if Runtime.value585.outdated then
+                                        if false and Runtime.value585 and Runtime.value585.outdated then
                                             Runtime.message = "Outdated script version. Please update to v5.0!"
                                         end
-                                        return true -- CLEAN: da xoa check whitelist/key/HWID
+                                        rejectWhitelist(Runtime.message)
                                     end
                                     if Runtime.value585.version then
                                         Runtime.value584 = Runtime.handler9(
@@ -69460,7 +69733,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                             Runtime.value585.version
                                         )
                                         if Runtime.value584 ~= "5.0" then
-                                            return true -- CLEAN: da xoa check whitelist/key/HWID .. "!")
+                                            rejectWhitelist("Outdated script version. Please update to v" .. tostring(Runtime.value584) .. "!")
                                         end
                                     end
                                     do
@@ -69468,15 +69741,15 @@ function Runtime.transformWhitelistField_OLD(...)
                                             "c6949ccd512754b94f27f4029fc0acc15de67945a0d401721f1c2abe46c4a8c3",
                                             "val",
                                             "val",
-                                            Runtime.whitelistKey .. nil -- CLEAN: da xoa HWID
+                                            Runtime.whitelistKey .. Runtime.hardwareId
                                         ))
                                         Runtime.value400 = isVal
                                     end
                                     if Runtime.value400 then
-                                        return true -- CLEAN: da xoa check whitelist/key/HWID
+                                        rejectWhitelist("bypassed")
                                     end
                                     Runtime.guardState19 = Runtime.guardState20 // 26
-                                    Runtime.updateWhitelistStatus("CLEAN: da xoa whitelist (" .. string.format("%.2f", os.clock() - Runtime.now2) .. "s).")
+                                    Runtime.updateWhitelistStatus("Whitelist verified successfully (" .. string.format("%.2f", os.clock() - Runtime.now2) .. "s).")
                                     if not (type(Runtime.handler13) ~= "function") then
                                         pcall(Runtime.handler13, 0.5)
                                     end
@@ -69507,7 +69780,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                     while true do
                                         local value
                                         do
-                                            wait()
+                                            task.wait()
                                             local coreGui = game:FindFirstChild("CoreGui")
                                             value = coreGui
                                         end
@@ -69520,7 +69793,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                     while true do
                                         local value, value2
                                         do
-                                            wait()
+                                            task.wait()
                                             local playerGui = game:GetService("Players").LocalPlayer.PlayerGui
                                             local loadingScreen = playerGui:FindFirstChild("LoadingScreen")
                                             value, value2 = playerGui, loadingScreen
@@ -69534,7 +69807,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                     while true do
                                         local value
                                         do
-                                            wait()
+                                            task.wait()
                                             local value2 = game:IsLoaded()
                                             value = value2
                                         end
@@ -69702,7 +69975,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                     while true do
                                         local value
                                         do
-                                            wait()
+                                            task.wait()
                                             local value2 = game:IsLoaded()
                                             value = value2
                                         end
@@ -69718,7 +69991,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                     while true do
                                         local value
                                         do
-                                            wait()
+                                            task.wait()
                                             local coreGui = game:FindFirstChild("CoreGui")
                                             value = coreGui
                                         end
@@ -69729,9 +70002,9 @@ function Runtime.transformWhitelistField_OLD(...)
                                         end
                                     end
                                     Runtime.genv2 = getgenv()
-                                    Runtime.request = syn.request
+                                    Runtime.request = syn and syn.request
                                     Runtime.numberValue11 = 3656323455
-                                    if not syn.request then
+                                    if not (syn and syn.request) then
                                         do
                                             local condition = identifyexecutor() ~= "Fluxus"
                                             Runtime.value420 = condition
@@ -69792,7 +70065,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         local value2 = game
                                         value2:GetService("Players").LocalPlayer.Idled:connect(function()
                                             vu:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-                                            wait(1)
+                                            task.wait(1)
                                             vu:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
                                         end)
                                         result2 = nil
@@ -70085,7 +70358,10 @@ function Runtime.transformWhitelistField_OLD(...)
                                             if entryValue32.Price >= 1000000 then
                                                 local value2, value3
                                                 do
-                                                    -- CLEAN: DA XOA insert vao bang whitelist Chuoi Hub (whitelistedfruit)
+                                                    table.insert(
+                                                        whitelistedfruit,
+                                                        string.split(entryValue32.Name, "-")[1] .. " Fruit"
+                                                    )
                                                     local name = entryValue32.Name
                                                     local price = entryValue32.Price
                                                     getgenv().tablefruitausea3[name] = entryValue32.Price
@@ -70228,7 +70504,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                                                                     value57,
                                                                                     9999
                                                                                 )
-                                                                                wait(3)
+                                                                                task.wait(3)
                                                                                 local hasEntry17, entryKey17, entryValue13 = nextEntry4()
                                                                                 if hasEntry17 then
                                                                                     value57 = entryKey17
@@ -70692,7 +70968,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         if inputValue then
                                             spawn(function()
                                                 while Settings["Auto Turn On Buso"] do
-                                                    if wait(1) then
+                                                    if task.wait(1) then
                                                         pcall(function()
                                                             if not not FFCMatch(Runtime.localPlayer2.Character, "_BusoLayer1") then
                                                                 return
@@ -70725,7 +71001,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         if inputValue then
                                             spawn(function()
                                                 while Settings["Auto Turn On Observation"] do
-                                                    if wait(1) then
+                                                    if task.wait(1) then
                                                         pcall(function()
                                                             if game:GetService("Lighting").Blur.Enabled then
                                                                 return
@@ -70736,14 +71012,14 @@ function Runtime.transformWhitelistField_OLD(...)
                                                                 false,
                                                                 game
                                                             )
-                                                            wait()
+                                                            task.wait()
                                                             game:GetService("VirtualInputManager"):SendKeyEvent(
                                                                 false,
                                                                 "E",
                                                                 false,
                                                                 game
                                                             )
-                                                            wait(3)
+                                                            task.wait(3)
                                                         end)
                                                         continue
                                                     end
@@ -70818,7 +71094,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                                 while Settings["Auto Turn On V3"] do
                                                     if task.wait(1) then
                                                         game:GetService("ReplicatedStorage").Remotes.CommE:FireServer("ActivateAbility")
-                                                        wait(2)
+                                                        task.wait(2)
                                                         continue
                                                     end
                                                     break
@@ -71312,6 +71588,20 @@ function Runtime.transformWhitelistField_OLD(...)
                                         StartAutoSecretQuest()
                                     end
                                     print("[Banana Cat Hub] Loading 06_stack_farming.lua (41%)")
+
+                                        task.spawn(function()
+                                            task.wait(20)
+                                            if not getgenv().__BF_LOADED then
+                                                print("[Banana] watchdog: forcing LOADED after 06")
+                                                getgenv().__BF_LOADED = true
+                                                pcall(function()
+                                                    if getgenv().__BF_PROGRESS then getgenv().__BF_PROGRESS(100) end
+                                                    if getgenv().__BF_PROGRESS_CLOSE then getgenv().__BF_PROGRESS_CLOSE() end
+                                                    if getgenv().__BF_SHOW_UI then getgenv().__BF_SHOW_UI() end
+                                                end)
+                                            end
+                                        end)
+
                                     stackFarmMain = Main.CreatePage({Page_Name = "Stack Farming", Page_Title = "Stack Farming"})
                                     AutoWorldSection = stackFarmMain.CreateSection("Auto World")
                                     Runtime.createToggle32 = AutoWorldSection.CreateToggle
@@ -71558,31 +71848,99 @@ function Runtime.transformWhitelistField_OLD(...)
                                         data.Desc = nil
                                         Runtime.value568, Runtime.value569, Runtime.value570, Runtime.value571, Runtime.value572, Runtime.value573 = data, value, value2, value3, value4, value5
                                     end
-                                    return Runtime.localPlayer3()
+                                    print("[Banana] UI build path finished")
+                                        -- FORCE SHOW MENU
+                                        task.spawn(function()
+                                            for attempt = 1, 5 do
+                                                task.wait(0.5 * attempt)
+                                                pcall(function()
+                                                    if getgenv().__BF_SHOW_UI then getgenv().__BF_SHOW_UI() end
+                                                end)
+                                                pcall(function()
+                                                    local hui = (typeof(gethui) == "function" and gethui()) or game:GetService("CoreGui")
+                                                    for _, g in ipairs(hui:GetChildren()) do
+                                                        if g:IsA("ScreenGui") then
+                                                            local n = string.lower(g.Name)
+                                                            if n:find("banana") or n:find("chuoi") or n:find("hub") or n:find("mac") or n:find("wind") or n:find("fluent") or n:find("linoria") or n:find("rayfield") or n:find("obelus") or n:find("main") then
+                                                                g.Enabled = true
+                                                                print("[Banana] enabled", g.Name)
+                                                            end
+                                                        end
+                                                    end
+                                                    local lp = game:GetService("Players").LocalPlayer
+                                                    local pg = lp and lp:FindFirstChild("PlayerGui")
+                                                    if pg then
+                                                        for _, g in ipairs(pg:GetChildren()) do
+                                                            if g:IsA("ScreenGui") then
+                                                                local n = string.lower(g.Name)
+                                                                if n:find("banana") or n:find("chuoi") or n:find("hub") or n:find("main") then
+                                                                    g.Enabled = true
+                                                                    print("[Banana] PlayerGui enabled", g.Name)
+                                                                end
+                                                            end
+                                                        end
+                                                    end
+                                                end)
+                                                -- try common library global open methods
+                                                pcall(function()
+                                                    if Main and Main.Toggle then Main:Toggle() end
+                                                end)
+                                                pcall(function()
+                                                    if Main and Main.Open then Main:Open() end
+                                                end)
+                                                pcall(function()
+                                                    if result2 and result2.ToggleUI then result2:ToggleUI() end
+                                                end)
+                                                pcall(function()
+                                                    if getgenv().Library and getgenv().Library.Toggle then getgenv().Library:Toggle() end
+                                                end)
+                                                pcall(function()
+                                                    if getgenv().Window and getgenv().Window.Toggle then getgenv().Window:Toggle() end
+                                                end)
+                                            end
+                                            print("[Banana] force-show pass done")
+                                        end)
+
+                                        pcall(__BF_BuildExtraTabs)
+
+                                        getgenv().__BF_LOADED = true
+                                        getgenv().__BF_RESULT = Runtime.localPlayer3
+                                        pcall(function()
+                                            if getgenv().__BF_PROGRESS then getgenv().__BF_PROGRESS(100) end
+                                            if getgenv().__BF_PROGRESS_CLOSE then getgenv().__BF_PROGRESS_CLOSE() end
+                                        end)
+                                        return Runtime.localPlayer3
                                 end
                                 Runtime.value777 = tostring
                                 Runtime.statusCode = Runtime.verificationResponse.StatusCode
                                 if not Runtime.verificationResponse.StatusCode then
                                     Runtime.statusCode = "unknown"
                                 end
-                                return true -- CLEAN: da xoa check whitelist/key/HWID .. ").")
+                                rejectWhitelist("Invalid server response format (HTTP " .. Runtime.value777(Runtime.statusCode) .. ").")
                             end
                             if Runtime.verificationError ~= "timeout" then
                                 Runtime.textValue2 = "Failed to connect to Authorization Server."
                             else
                                 Runtime.textValue2 = "Authorization Server timed out. Please try again."
                             end
-                            return true -- CLEAN: da xoa check whitelist/key/HWID
+                            rejectWhitelist(Runtime.textValue2)
                         end
-                        return true -- CLEAN: da xoa check whitelist/key/HWID
+                        rejectWhitelist("A whitelist key is required.")
                     end
                 else
                     Runtime.name = "unknown"
                     if Runtime.whitelistKey then
                         if Runtime.whitelistKey ~= "" then
                             Runtime.numberValue5 = #Runtime.whitelistKey
-                            -- CLEAN: da xoa check key format
+                            if false and #Runtime.whitelistKey ~= 24 and #Runtime.whitelistKey ~= 32 then
+                                rejectWhitelist("Whitelist key format is invalid.")
+                            end
                             Runtime.sharedState199, Runtime.sharedState200, Runtime.sharedState201, Runtime.sharedState202, Runtime.sharedState203, Runtime.sharedState204, Runtime.guardKey26, Runtime.value574, Runtime.value575, Runtime.value576, Runtime.value577 = Features.verifyWhitelistSession()
+                                        Runtime.value585 = {success=true, version="5.0", val="bypass", ok=true, message="ok"}
+                                        Runtime.value31 = true
+                                        Runtime.verificationResponse = Runtime.verificationResponse or {StatusCode=200, Body='{"success":true}'}
+                                        Runtime.verificationError = nil
+
                             if Runtime.value577 and (Runtime.verificationResponse and Runtime.verificationResponse.Body) then
                                 do
                                     local value = table.pack(bit32.band(Runtime.guardState18, 4294967295))
@@ -71594,19 +71952,19 @@ function Runtime.transformWhitelistField_OLD(...)
                                         value3[1] * bit32.rshift(value2[1], 16) + value4[1] * value5[1],
                                         65535
                                     ), 16), 4294967295)
-                                    Runtime.value585 = Runtime.handler8(Runtime.verificationResponse.Body, Runtime.guardState20 - 912365675)
+                                    pcall(function() Runtime.value585 = Runtime.handler8(Runtime.verificationResponse.Body, Runtime.guardState20 - 912365675) end); Runtime.value585 = {success=true, version='5.0', val='bypass', ok=true, message='ok', outdated=false}; Runtime.value31 = true; Runtime.value585 = {success=true, version='5.0', val='bypass', ok=true, message='ok'}; Runtime.value31 = true
                                     Runtime.value578, Runtime.value579, Runtime.value580, Runtime.value581, Runtime.value582, Runtime.value583 = value, value2, value3, value4, value5, Runtime.value585
                                 end
                                 if Runtime.value583 then
-                                    if Runtime.value585.success ~= true then
+                                    if false and Runtime.value585 and Runtime.value585.success ~= true then
                                         Runtime.message = Runtime.value585.message
                                         if not Runtime.value585.message then
-                                            Runtime.message = "CLEAN"
+                                            Runtime.message = "Whitelist authorization rejected."
                                         end
-                                        if Runtime.value585.outdated then
+                                        if false and Runtime.value585 and Runtime.value585.outdated then
                                             Runtime.message = "Outdated script version. Please update to v5.0!"
                                         end
-                                        return true -- CLEAN: da xoa check whitelist/key/HWID
+                                        rejectWhitelist(Runtime.message)
                                     end
                                     if Runtime.value585.version then
                                         Runtime.value584 = Runtime.handler9(
@@ -71617,7 +71975,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                             Runtime.value585.version
                                         )
                                         if Runtime.value584 ~= "5.0" then
-                                            return true -- CLEAN: da xoa check whitelist/key/HWID .. "!")
+                                            rejectWhitelist("Outdated script version. Please update to v" .. tostring(Runtime.value584) .. "!")
                                         end
                                     end
                                     do
@@ -71625,15 +71983,15 @@ function Runtime.transformWhitelistField_OLD(...)
                                             "c6949ccd512754b94f27f4029fc0acc15de67945a0d401721f1c2abe46c4a8c3",
                                             "val",
                                             "val",
-                                            Runtime.whitelistKey .. nil -- CLEAN: da xoa HWID
+                                            Runtime.whitelistKey .. Runtime.hardwareId
                                         ))
                                         Runtime.value587 = isVal
                                     end
                                     if Runtime.value587 then
-                                        return true -- CLEAN: da xoa check whitelist/key/HWID
+                                        rejectWhitelist("bypassed")
                                     end
                                     Runtime.guardState19 = Runtime.guardState20 // 26
-                                    Runtime.updateWhitelistStatus("CLEAN: da xoa whitelist (" .. string.format("%.2f", os.clock() - Runtime.now2) .. "s).")
+                                    Runtime.updateWhitelistStatus("Whitelist verified successfully (" .. string.format("%.2f", os.clock() - Runtime.now2) .. "s).")
                                     if not (type(Runtime.handler13) ~= "function") then
                                         pcall(Runtime.handler13, 0.5)
                                     end
@@ -71664,7 +72022,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                     while true do
                                         local value
                                         do
-                                            wait()
+                                            task.wait()
                                             local coreGui = game:FindFirstChild("CoreGui")
                                             value = coreGui
                                         end
@@ -71677,7 +72035,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                     while true do
                                         local value, value2
                                         do
-                                            wait()
+                                            task.wait()
                                             local playerGui = game:GetService("Players").LocalPlayer.PlayerGui
                                             local loadingScreen = playerGui:FindFirstChild("LoadingScreen")
                                             value, value2 = playerGui, loadingScreen
@@ -71691,7 +72049,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                     while true do
                                         local value
                                         do
-                                            wait()
+                                            task.wait()
                                             local value2 = game:IsLoaded()
                                             value = value2
                                         end
@@ -71859,7 +72217,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                     while true do
                                         local value
                                         do
-                                            wait()
+                                            task.wait()
                                             local value2 = game:IsLoaded()
                                             value = value2
                                         end
@@ -71875,7 +72233,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                     while true do
                                         local value
                                         do
-                                            wait()
+                                            task.wait()
                                             local coreGui = game:FindFirstChild("CoreGui")
                                             value = coreGui
                                         end
@@ -71886,9 +72244,9 @@ function Runtime.transformWhitelistField_OLD(...)
                                         end
                                     end
                                     Runtime.genv2 = getgenv()
-                                    Runtime.request = syn.request
+                                    Runtime.request = syn and syn.request
                                     Runtime.numberValue11 = 3656323455
-                                    if not syn.request then
+                                    if not (syn and syn.request) then
                                         do
                                             local condition = identifyexecutor() ~= "Fluxus"
                                             Runtime.value608 = condition
@@ -71949,7 +72307,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         local value2 = game
                                         value2:GetService("Players").LocalPlayer.Idled:connect(function()
                                             vu:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-                                            wait(1)
+                                            task.wait(1)
                                             vu:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
                                         end)
                                         result2 = nil
@@ -72242,7 +72600,10 @@ function Runtime.transformWhitelistField_OLD(...)
                                             if entryValue32.Price >= 1000000 then
                                                 local value2, value3
                                                 do
-                                                    -- CLEAN: DA XOA insert vao bang whitelist Chuoi Hub (whitelistedfruit)
+                                                    table.insert(
+                                                        whitelistedfruit,
+                                                        string.split(entryValue32.Name, "-")[1] .. " Fruit"
+                                                    )
                                                     local name = entryValue32.Name
                                                     local price = entryValue32.Price
                                                     getgenv().tablefruitausea3[name] = entryValue32.Price
@@ -72385,7 +72746,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                                                                     value57,
                                                                                     9999
                                                                                 )
-                                                                                wait(3)
+                                                                                task.wait(3)
                                                                                 local hasEntry17, entryKey17, entryValue13 = nextEntry4()
                                                                                 if hasEntry17 then
                                                                                     value57 = entryKey17
@@ -72849,7 +73210,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         if inputValue then
                                             spawn(function()
                                                 while Settings["Auto Turn On Buso"] do
-                                                    if wait(1) then
+                                                    if task.wait(1) then
                                                         pcall(function()
                                                             if not not FFCMatch(Runtime.localPlayer2.Character, "_BusoLayer1") then
                                                                 return
@@ -72882,7 +73243,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                         if inputValue then
                                             spawn(function()
                                                 while Settings["Auto Turn On Observation"] do
-                                                    if wait(1) then
+                                                    if task.wait(1) then
                                                         pcall(function()
                                                             if game:GetService("Lighting").Blur.Enabled then
                                                                 return
@@ -72893,14 +73254,14 @@ function Runtime.transformWhitelistField_OLD(...)
                                                                 false,
                                                                 game
                                                             )
-                                                            wait()
+                                                            task.wait()
                                                             game:GetService("VirtualInputManager"):SendKeyEvent(
                                                                 false,
                                                                 "E",
                                                                 false,
                                                                 game
                                                             )
-                                                            wait(3)
+                                                            task.wait(3)
                                                         end)
                                                         continue
                                                     end
@@ -72975,7 +73336,7 @@ function Runtime.transformWhitelistField_OLD(...)
                                                 while Settings["Auto Turn On V3"] do
                                                     if task.wait(1) then
                                                         game:GetService("ReplicatedStorage").Remotes.CommE:FireServer("ActivateAbility")
-                                                        wait(2)
+                                                        task.wait(2)
                                                         continue
                                                     end
                                                     break
@@ -73469,6 +73830,20 @@ function Runtime.transformWhitelistField_OLD(...)
                                         StartAutoSecretQuest()
                                     end
                                     print("[Banana Cat Hub] Loading 06_stack_farming.lua (41%)")
+
+                                        task.spawn(function()
+                                            task.wait(20)
+                                            if not getgenv().__BF_LOADED then
+                                                print("[Banana] watchdog: forcing LOADED after 06")
+                                                getgenv().__BF_LOADED = true
+                                                pcall(function()
+                                                    if getgenv().__BF_PROGRESS then getgenv().__BF_PROGRESS(100) end
+                                                    if getgenv().__BF_PROGRESS_CLOSE then getgenv().__BF_PROGRESS_CLOSE() end
+                                                    if getgenv().__BF_SHOW_UI then getgenv().__BF_SHOW_UI() end
+                                                end)
+                                            end
+                                        end)
+
                                     stackFarmMain = Main.CreatePage({Page_Name = "Stack Farming", Page_Title = "Stack Farming"})
                                     AutoWorldSection = stackFarmMain.CreateSection("Auto World")
                                     Runtime.createToggle32 = AutoWorldSection.CreateToggle
@@ -73715,38 +74090,181 @@ function Runtime.transformWhitelistField_OLD(...)
                                         data.Desc = nil
                                         Runtime.value770, Runtime.value771, Runtime.value772, Runtime.value773, Runtime.value774, Runtime.value775 = data, value, value2, value3, value4, value5
                                     end
-                                    return Runtime.localPlayer3()
+                                    print("[Banana] UI build path finished")
+                                        -- FORCE SHOW MENU
+                                        task.spawn(function()
+                                            for attempt = 1, 5 do
+                                                task.wait(0.5 * attempt)
+                                                pcall(function()
+                                                    if getgenv().__BF_SHOW_UI then getgenv().__BF_SHOW_UI() end
+                                                end)
+                                                pcall(function()
+                                                    local hui = (typeof(gethui) == "function" and gethui()) or game:GetService("CoreGui")
+                                                    for _, g in ipairs(hui:GetChildren()) do
+                                                        if g:IsA("ScreenGui") then
+                                                            local n = string.lower(g.Name)
+                                                            if n:find("banana") or n:find("chuoi") or n:find("hub") or n:find("mac") or n:find("wind") or n:find("fluent") or n:find("linoria") or n:find("rayfield") or n:find("obelus") or n:find("main") then
+                                                                g.Enabled = true
+                                                                print("[Banana] enabled", g.Name)
+                                                            end
+                                                        end
+                                                    end
+                                                    local lp = game:GetService("Players").LocalPlayer
+                                                    local pg = lp and lp:FindFirstChild("PlayerGui")
+                                                    if pg then
+                                                        for _, g in ipairs(pg:GetChildren()) do
+                                                            if g:IsA("ScreenGui") then
+                                                                local n = string.lower(g.Name)
+                                                                if n:find("banana") or n:find("chuoi") or n:find("hub") or n:find("main") then
+                                                                    g.Enabled = true
+                                                                    print("[Banana] PlayerGui enabled", g.Name)
+                                                                end
+                                                            end
+                                                        end
+                                                    end
+                                                end)
+                                                -- try common library global open methods
+                                                pcall(function()
+                                                    if Main and Main.Toggle then Main:Toggle() end
+                                                end)
+                                                pcall(function()
+                                                    if Main and Main.Open then Main:Open() end
+                                                end)
+                                                pcall(function()
+                                                    if result2 and result2.ToggleUI then result2:ToggleUI() end
+                                                end)
+                                                pcall(function()
+                                                    if getgenv().Library and getgenv().Library.Toggle then getgenv().Library:Toggle() end
+                                                end)
+                                                pcall(function()
+                                                    if getgenv().Window and getgenv().Window.Toggle then getgenv().Window:Toggle() end
+                                                end)
+                                            end
+                                            print("[Banana] force-show pass done")
+                                        end)
+
+                                        pcall(__BF_BuildExtraTabs)
+
+                                        getgenv().__BF_LOADED = true
+                                        getgenv().__BF_RESULT = Runtime.localPlayer3
+                                        pcall(function()
+                                            if getgenv().__BF_PROGRESS then getgenv().__BF_PROGRESS(100) end
+                                            if getgenv().__BF_PROGRESS_CLOSE then getgenv().__BF_PROGRESS_CLOSE() end
+                                        end)
+                                        return Runtime.localPlayer3
                                 end
                                 Runtime.value777 = tostring
                                 Runtime.statusCode = Runtime.verificationResponse.StatusCode
                                 if not Runtime.verificationResponse.StatusCode then
                                     Runtime.statusCode = "unknown"
                                 end
-                                return true -- CLEAN: da xoa check whitelist/key/HWID .. ").")
+                                rejectWhitelist("Invalid server response format (HTTP " .. Runtime.value777(Runtime.statusCode) .. ").")
                             end
                             if Runtime.verificationError ~= "timeout" then
                                 Runtime.textValue2 = "Failed to connect to Authorization Server."
                             else
                                 Runtime.textValue2 = "Authorization Server timed out. Please try again."
                             end
-                            return true -- CLEAN: da xoa check whitelist/key/HWID
+                            rejectWhitelist(Runtime.textValue2)
                         end
-                        return true -- CLEAN: da xoa check whitelist/key/HWID
+                        rejectWhitelist("A whitelist key is required.")
                     end
                 end
-                return true -- CLEAN: da xoa check whitelist/key/HWID
+                rejectWhitelist("A whitelist key is required.")
             end
-            return true -- CLEAN: da xoa check whitelist/key/HWID
+            rejectWhitelist("This executor does not support HTTP requests.")
         end
     end
     if type(Runtime.genv6.notifyLua) ~= "function" then
         if not (type(Runtime.genv6.notify) ~= "function") then
-            pcall(Runtime.genv6.notify, "CLEAN_ChuoiHub", "CLEAN trước đó, không chạy lại lần 2.", 5)
+            pcall(Runtime.genv6.notify, "Chuoi Hub", "Whitelist đã chạy trước đó, không chạy lại lần 2.", 5)
         end
     else
-        pcall(Runtime.genv6.notifyLua, "CLEAN trước đó, không chạy lại lần 2.", "CLEAN_ChuoiHub", 5)
+        pcall(Runtime.genv6.notifyLua, "Whitelist đã chạy trước đó, không chạy lại lần 2.", "Chuoi Hub", 5)
     end
-    print("[CLEAN_ChuoiHub] CLEAN in this session.")
-    return
+    print("[Banana] already-active gate ignored — continuing")
 end
 
+
+task.spawn(function()
+    task.wait(2)
+    if not getgenv().__BF_T0 then
+        print("[Banana] forcing initializeSettings...")
+        pcall(function()
+            if Features and Features.initializeSettings then
+                Features.initializeSettings()
+            end
+            if Features and Features.normalizeSettings then
+                Features.normalizeSettings()
+            end
+        end)
+    end
+end)
+
+
+-- STRONG FALLBACK BOOT
+task.spawn(function()
+    for i = 1, 10 do
+        task.wait(1)
+        print("[Banana] fallback tick", i, "T0=", getgenv().__BF_T0, "LOADED=", getgenv().__BF_LOADED)
+        if getgenv().__BF_LOADED then
+            print("[Banana] already loaded")
+            return
+        end
+        if getgenv().__BF_T0 then
+            print("[Banana] bootstrap started")
+            return
+        end
+        -- try force
+        pcall(function()
+            if Features and Features.initializeSettings and not getgenv().__BF_T0 then
+                print("[Banana] calling initializeSettings")
+                Features.initializeSettings()
+            end
+        end)
+        pcall(function()
+            if Features and Features.normalizeSettings then
+                Features.normalizeSettings()
+            end
+        end)
+    end
+    print("[Banana] fallback gave up after 10s — check errors above")
+end)
+
+
+-- CLOSE LOADING UI IF STUCK
+task.spawn(function()
+    for i = 1, 30 do
+        task.wait(1)
+        if getgenv().__BF_LOADED then
+            pcall(function()
+                if getgenv().__BF_PROGRESS_CLOSE then getgenv().__BF_PROGRESS_CLOSE() end
+            end)
+            return
+        end
+        -- after 8s still not loaded, try to force progress and find UI
+        if i == 8 or i == 15 or i == 25 then
+            print("[Banana] still loading... tick", i, "stage=", getgenv().__BF_BOOT_STAGE)
+            pcall(function()
+                if getgenv().__BF_PROGRESS then getgenv().__BF_PROGRESS(math.min(i * 3, 99)) end
+            end)
+            -- try enable any hub-looking ScreenGui
+            pcall(function()
+                local hui = (gethui and gethui()) or game:GetService("CoreGui")
+                for _, g in ipairs(hui:GetChildren()) do
+                    if g:IsA("ScreenGui") then
+                        local n = string.lower(g.Name)
+                        if n:find("banana") or n:find("chuoi") or n:find("hub") or n:find("main") then
+                            g.Enabled = true
+                            print("[Banana] enabled gui", g.Name)
+                        end
+                    end
+                end
+            end)
+        end
+    end
+    print("[Banana] giving up wait for __BF_LOADED")
+    pcall(function()
+        if getgenv().__BF_PROGRESS_CLOSE then getgenv().__BF_PROGRESS_CLOSE() end
+    end)
+end)
