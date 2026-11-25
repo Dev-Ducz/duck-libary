@@ -832,16 +832,232 @@ function GetNearestChest()
 	end
 	return F
 end
+-- [sync] helpers needed by the newer tab logic (copied from the full script)
+BuyMeleeSecretForce = BuyMeleeSecretForce or false
+function IsSecretQuestOn()
+	return (Settings and Settings["Auto Secret Quest"]) or BuyMeleeSecretForce
+end
+function IsRepairHold()
+	if not (Settings and Settings["Auto Repair Ur Ship"]) then
+		return false
+	end
+	if tick() >= (getgenv().RepairShipHoldUntil or 0) then
+		return false
+	end
+	local c = game:GetService("Players").LocalPlayer.Character
+	local hum = c and c:FindFirstChildOfClass("Humanoid")
+	return hum ~= nil and not hum.Sit
+end
+function BuddhaFarmOn()
+	return Settings ~= nil
+		and Settings["Use Buddha with farming"] == true
+		and getgenv().FarmingTabActive == true
+		and tick() - (getgenv().BuddhaBossAt or 0) > 1.5
+		and not getgenv().BuddhaRemoteHold
+end
+function BuddhaFarmY()
+	return BuddhaFarmOn() and 30 or 20
+end
+-- Tắt Phật (nếu đang biến) trước khi chạy remote tele. Không phụ thuộc toggle farm.
+if type(BananaOwner) ~= "function" then BananaOwner = function() end end
+if not getgenv().ClickWorldPos then
+do
+	local st = { pos = nil, tick = 0, running = false }
+
+	local function screenOf(pos)
+		local cam = workspace.CurrentCamera
+		local v = cam:WorldToViewportPoint(pos)
+		local vp = cam.ViewportSize
+		if v.Z <= 0 or v.X < 0 or v.Y < 0 or v.X > vp.X or v.Y > vp.Y then
+			cam.CFrame = CFrame.lookAt(cam.CFrame.Position, pos)
+			v = cam:WorldToViewportPoint(pos)
+		end
+		local x = math.clamp(v.X, 1, vp.X - 1)
+		local y = math.clamp(v.Y, 1, vp.Y - 1)
+		if getgenv().ClickUseInset then
+			y = y + game:GetService("GuiService"):GetGuiInset().Y
+		end
+		return x, y
+	end
+
+	getgenv().ClickWorldPos = function(pos)
+		local now = tick()
+		if now - (st.last or 0) < (getgenv().TreeClickInterval or 0.7) then
+			return
+		end
+		st.last = now
+		local x, y = screenOf(pos)
+		if getgenv().DebugTreeClick then
+			print("[TreeClick]", math.floor(x), math.floor(y))
+		end
+		local vim = game:GetService("VirtualInputManager")
+		vim:SendMouseButtonEvent(x, y, 0, true, game, 1)
+		vim:SendMouseButtonEvent(x, y, 0, false, game, 1)
+	end
+end
+end
+if not getgenv().ShootGunDS then
+do
+	local RS = game:GetService("ReplicatedStorage")
+	local VIM = game:GetService("VirtualInputManager")
+	local GuiService = game:GetService("GuiService")
+	local lp = game:GetService("Players").LocalPlayer
+
+	getgenv().ShootGunRange = getgenv().ShootGunRange or 500
+	getgenv().ShootGunDelay = getgenv().ShootGunDelay or 0.02
+
+	local function findNetRemote(name)
+		local net = RS:FindFirstChild("Modules") and RS.Modules:FindFirstChild("Net")
+		if not net then
+			return
+		end
+		local r = net:FindFirstChild(name)
+		if r then
+			return r
+		end
+		for _, v in ipairs(net:GetDescendants()) do
+			if v:IsA("RemoteEvent") and v.Name == name then
+				return v
+			end
+		end
+	end
+
+	local function shootPart(m)
+		if not m:IsA("Model") then
+			return
+		end
+		local hum = m:FindFirstChildOfClass("Humanoid")
+		if hum then
+			if hum.Health <= 0 then
+				return
+			end
+			return m:FindFirstChild("HumanoidRootPart") or m:FindFirstChild("Head")
+		end
+		local hv = m:FindFirstChild("Health")
+		if hv and hv:IsA("ValueBase") and hv.Value <= 0 then
+			return
+		end
+		local n = m.Name
+		if n:find("Leviathan", 1, true) then
+			if n == "Leviathan" and m:GetAttribute("Armored") then
+				return
+			end
+			if n == "Leviathan Tail" and not m:GetAttribute("HealthEnabled") then
+				return
+			end
+			return m:FindFirstChild("Hitbox11") or m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+		end
+		if m:FindFirstChild("Engine") and hv then
+			return m.Engine
+		end
+		if m:FindFirstChild("HealthBBG") then
+			return m:FindFirstChild("HumanoidRootPart")
+		end
+	end
+
+	getgenv().GetShootGunTarget = function(range)
+		local char = lp.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		if not root then
+			return
+		end
+		local best, bd = nil, range or getgenv().ShootGunRange
+		for _, folder in ipairs({ workspace:FindFirstChild("Enemies"), workspace:FindFirstChild("SeaBeasts") }) do
+			if folder then
+				for _, m in ipairs(folder:GetChildren()) do
+					local part = shootPart(m)
+					if part then
+						local d = (root.Position - part.Position).Magnitude
+						if d < bd then
+							best, bd = part, d
+						end
+					end
+				end
+			end
+		end
+		return best
+	end
+
+	getgenv().ShootGunDS = function(part)
+		if not part then
+			return
+		end
+		local char = lp.Character
+		if not (char and char:FindFirstChild("Dragonstorm")) then
+			return
+		end
+		local ev = findNetRemote("RE/ShootGunEvent")
+		if ev then
+			pcall(function()
+				ev:FireServer(part.Position, { part })
+			end)
+		end
+		pcall(function()
+			VIM:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+			VIM:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+		end)
+	end
+
+	-- Support: bắn bằng MỌI súng (ToolTip == "Gun"). Chỉ dùng cho Farm Mastery (Gun).
+	-- Không tự trang bị súng. Trả về false nếu không có súng đang cầm / không có part.
+	local CombatUtilSupport
+	pcall(function()
+		CombatUtilSupport = require(RS.Modules.CombatUtil)
+	end)
+	getgenv().ShootAllGun = function(part, gun)
+		if not part then
+			return false
+		end
+		local char = lp.Character
+		if not char then
+			return false
+		end
+		if not gun then
+			for _, v in ipairs(char:GetChildren()) do
+				if v:IsA("Tool") and v.ToolTip == "Gun" then
+					gun = v
+					break
+				end
+			end
+		end
+		if not gun or gun.Parent ~= char then
+			return false
+		end
+		if CombatUtilSupport then
+			local ok, reloading = pcall(function()
+				return CombatUtilSupport:IsGunReloading(gun)
+			end)
+			if ok and reloading then
+				return true
+			end
+		end
+		if gun.Name == "Skull Guitar" then
+			local re = gun:FindFirstChild("RemoteEvent")
+			if re then
+				pcall(function()
+					re:FireServer("TAP", part.Position)
+				end)
+			end
+			FireHumanoidTap(part.Position)
+			return true
+		end
+		local ev = findNetRemote("RE/ShootGunEvent")
+		if ev then
+			pcall(function()
+				ev:FireServer(part.Position, { part })
+			end)
+		end
+		return true
+	end
+end
+end
 end
 function __BF_GraftPage0()
 FarmotherMain = Main.CreatePage({ Page_Name = "Farming Other", Page_Title = "Farming Other" })
--- ===== Secret Quest (39 hidden quests) - thay thế Event Easter =====
 
--- ========== SHIMS (map Vxeze -> BananaCat) ==========
 do
 	localPlayer = t or game.Players.LocalPlayer
 
-	-- Movement
 	ToTarget = ToTarget or toTarget or getgenv().toTarget or function(cf)
 		if type(toTarget) == "function" then
 			return toTarget(cf)
@@ -851,7 +1067,6 @@ do
 		end
 	end
 
-	-- Combat
 	SizePart = SizePart or sizepart
 	if type(getgenv().ClickM1) == "function" then
 		ClickM1 = getgenv().ClickM1
@@ -861,7 +1076,6 @@ do
 		UsedualFlock = getgenv().UsedualFlock
 	end
 
-	-- Sea 1 gate (BananaCat: CheckPlaceId3 = Sea1)
 	Place_Id = Place_Id or {}
 	Place_Id.sea1 = Place_Id.sea1 or function()
 		return game.PlaceId == (getgenv().CheckPlaceId3 or 2753915549)
@@ -875,7 +1089,6 @@ do
 		return game.PlaceId == (getgenv().CheckPlaceId or 7449423635)
 	end
 
-	-- Notify
 	VxezeNotify = VxezeNotify or function(title, desc, kind, extra)
 		local text = tostring(title or "")
 		if desc and tostring(desc) ~= "" then
@@ -894,7 +1107,6 @@ do
 		end
 	end
 
-	-- Inventory list (BananaCat uses local B() in some scopes; rebuild if missing)
 	if type(GetInventoryItems) ~= "function" then
 		GetInventoryItems = function()
 			local ok, list = pcall(function()
@@ -930,7 +1142,6 @@ do
 		end
 	end
 
-	-- Tween helpers
 	StopTweenNow = StopTweenNow or function()
 		pcall(function()
 			if TweenManager and TweenManager.CancelCurrent then
@@ -948,14 +1159,13 @@ do
 			if hrp then
 				hrp.Anchored = false
 				local ff = hrp:FindFirstChild("FloatForce")
-				if ff then
+				if ff and not IsSecretQuestOn() then
 					ff:Destroy()
 				end
 			end
 		end)
 	end
 
-	-- Soft require / gate helper used by original toggle
 	EnforceGate = EnforceGate or function(_, name, ok, msg)
 		if not ok then
 			SaveSettings(name, false)
@@ -965,15 +1175,12 @@ do
 		return true
 	end
 
-	-- Log helper
 	VxezeLog = VxezeLog or function(a, b)
 		print("[SecretQuest]", tostring(a), tostring(b))
 	end
 
-	-- ReplicatedStorage alias if missing
 	ReplicatedStorage = ReplicatedStorage or game:GetService("ReplicatedStorage")
 
-	-- Helper thiếu trong BananaCat (lấy từ Vxeze)
 	VirtualInputManager = VirtualInputManager or game:GetService("VirtualInputManager")
 	NoclipChanged = NoclipChanged or setmetatable({}, { __mode = "k" })
 
@@ -1000,7 +1207,6 @@ do
 	end
 end
 
--- ========== UI: đầu tab Farming Other ==========
 
 HiddenEventSection = FarmotherMain.CreateSection("Secret Quest")
 StatusHiddenProgress = HiddenEventSection.CreateLabel({ Title = "Secret Quest : 0/39 Quests" })
@@ -1151,7 +1357,7 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 	HiddenMove = function(arg)
 		HiddenRelease()
 
-		if Settings["Auto Secret Quest"] then
+		if IsSecretQuestOn() then
 			ToTarget(arg)
 		end
 	end
@@ -1361,7 +1567,7 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 	end
 
 	HiddenDialogueLoop = function()
-		while Settings["Auto Secret Quest"] do
+		while IsSecretQuestOn() do
 			pcall(AutoHiddenDialogue)
 			task.wait(0.4)
 		end
@@ -1424,7 +1630,7 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 
 				if not (arg2 <= CountHiddenMaterial(arg)) then
 					now2 = now3
-					flag = tick() - now > 45 or not Settings["Auto Secret Quest"]
+					flag = tick() - now > 45 or not IsSecretQuestOn()
 
 					if flag then
 						__brk = true break
@@ -1433,7 +1639,7 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 					end
 				end
 			else
-				flag = tick() - now > 45 or not Settings["Auto Secret Quest"]
+				flag = tick() - now > 45 or not IsSecretQuestOn()
 
 				if flag then
 					__brk = true break
@@ -1563,7 +1769,7 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 			return true
 		end
 
-		if Settings["Auto Secret Quest"] then
+		if IsSecretQuestOn() then
 			return HiddenSettle(fisherman + Vector3.new(0, 1.5, 4), 10)
 		end
 		ToTarget(CFrame.new(fisherman + Vector3.new(0, 1.5, 4)))
@@ -2014,7 +2220,7 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 
 				HiddenMove(GetHiddenFarmCFrame(fighting))
 				getgenv().ClickM1(fighting, true)
-				if not (not IsHiddenTarget(fighting) or not Settings["Auto Secret Quest"] or tick() - now > n) then
+				if not (not IsHiddenTarget(fighting) or not IsSecretQuestOn() or tick() - now > n) then
 					break
 				end
 				__brk = true break
@@ -2368,7 +2574,7 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 		local now = tick()
 		local v7 = arg2
 
-		while Settings["Auto Secret Quest"] and not flag and tick() - now < 100 and humanoidRootPart.Parent do
+		while IsSecretQuestOn() and not flag and tick() - now < 100 and humanoidRootPart.Parent do
 			task.wait(0.05)
 			local flag2 = false
 
@@ -2539,7 +2745,7 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 					local v7 = GetNpcPosition("Sky Quest Giver 2")
 					local now = tick()
 
-					while Settings["Auto Secret Quest"] and tick() - now < 60 do
+					while IsSecretQuestOn() and tick() - now < 60 do
 						task.wait(0.3)
 						if v7 and HiddenSettle(v7 + Vector3.new(0, 1.5, 4), 10) then
 							TalkHiddenNpc("Sky Quest Giver 2", { "The old temple", "I'll get it" })
@@ -2580,7 +2786,7 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 		end
 		local response2
 
-		while Settings["Auto Secret Quest"] do repeat 
+		while IsSecretQuestOn() do repeat 
 			local str2 = "/4: watching " .. #response.Manifest .. " ships"
 			SetHiddenStep("Lookout round " .. tostring(response.Round) .. str2)
 			local now = tick()
@@ -2696,7 +2902,7 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 			local now = tick()
 			HiddenEvent.arrived = nil
 
-			while Settings["Auto Secret Quest"] and tick() - now < 60 do
+			while IsSecretQuestOn() and tick() - now < 60 do
 				task.wait(0.1)
 				fn()
 				if HiddenSettle(arg2, 8) then
@@ -2709,7 +2915,7 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 		local cframe = nil
 
 		for k, v6 in pairs(tbl9) do local __brk = false repeat 
-			if not (not Settings["Auto Secret Quest"] or not fn2(v6.Position + Vector3.new(0, 3, 0))) then
+			if not (not IsSecretQuestOn() or not fn2(v6.Position + Vector3.new(0, 3, 0))) then
 				SetHiddenStep("Roll snowball " .. n + 1 .. "/3")
 				arg:FireServer("GrabSnowball", k)
 				n = n + (1)
@@ -3077,7 +3283,7 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 						pcall(localPlayer.Character.Humanoid.EquipTool, localPlayer.Character.Humanoid, v7)
 					end
 
-					if not (workspace:GetServerTimeNow() >= n - 0.08 or not Settings["Auto Secret Quest"]) then
+					if not (workspace:GetServerTimeNow() >= n - 0.08 or not IsSecretQuestOn()) then
 						break
 					end
 					__brk = true break
@@ -3638,8 +3844,6 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 	end
 
 	QueueHiddenReload = function()
-		-- Không queue_on_teleport lần 2 (tránh script chạy 2 lần sau teleport / load nhầm BF-VxezeHub.lua).
-		-- Việc tự chạy lại sau hop đã do toggle "Auto Load Script" của Banana đảm nhiệm.
 		return true
 	end
 
@@ -5756,16 +5960,13 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 
 				if (progress.SecondsRemaining or 0) > 0 then
 					local time_ = lookout.time
-					-- còn lại = giây server báo - thời gian đã trôi qua kể từ lúc hỏi
 					local n = progress.SecondsRemaining - (tick() - time_)
 
 					if n > 0 then
-						-- nhớ giờ Captain sẵn sàng để quay lại làm ngay khi tới giờ
 						HiddenEvent.readyAt = HiddenEvent.readyAt or {}
 						HiddenEvent.readyAt.Lookout = tick() + n
 					end
 
-					-- chưa tới giờ => skip để làm quest khác (không đứng chờ)
 					return "Captain needs time (" .. FormatMagnetTime(math.max(0, n)) .. ")", n > 0
 				end
 
@@ -6377,7 +6578,6 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 	HiddenRetryDelay = function(arg)
 		local readyAt = HiddenEvent.readyAt and HiddenEvent.readyAt[arg.Name]
 		if readyAt then
-			-- biết chính xác bao giờ làm được -> chỉ skip tới lúc đó
 			return math.max(readyAt - tick(), 5)
 		end
 		local retryOverride = HiddenEvent.retryOverride and HiddenEvent.retryOverride[arg.Name]
@@ -6489,7 +6689,6 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 		HiddenNotify(current .. " got stuck on \"" .. tostring(stall.step) .. "\", trying another quest", current .. "stall", "warning")
 	end
 
-	-- Quest đang bị skip (chờ) mà đã làm được => gỡ skip + đẩy lên đầu hàng đợi
 	HiddenWakeBoost = function(name)
 		HiddenEvent.readyBoost = HiddenEvent.readyBoost or {}
 		return tick() < (HiddenEvent.readyBoost[name] or 0)
@@ -6520,12 +6719,10 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 			local blocked = HiddenEvent.waiting[name] ~= nil or HiddenEvent.readyAt[name] ~= nil
 
 			if progress[key] ~= true and skipped and blocked and tick() >= (HiddenEvent.wakeCheck[name] or 0) then
-				-- (a) tới giờ hẹn (vd Lookout: Captain hết cooldown)
 				local readyAt = HiddenEvent.readyAt[name]
 				if readyAt and tick() >= readyAt then
 					wake(quest, "timer done")
 				else
-					-- (b) moment của quest vừa load
 					local moment = GetHiddenMoment(name)
 					local up = moment and (not quest.HintIsland or moment.Active)
 					if up and HiddenEvent.wokeMoment[name] ~= moment then
@@ -6533,7 +6730,6 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 						wake(quest, "quest appeared")
 					elseif not up then
 						HiddenEvent.wokeMoment[name] = nil
-						-- (c) điều kiện Precheck đã thoả (đêm, boss hint, ...)
 						if quest.Precheck and not readyAt and tick() >= (HiddenEvent.precheckAt and HiddenEvent.precheckAt[name] or 0) then
 							HiddenEvent.precheckAt = HiddenEvent.precheckAt or {}
 							HiddenEvent.precheckAt[name] = tick() + 10
@@ -6612,7 +6808,6 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 				end
 
 				if readyBoost then
-					-- quest vừa hết chờ: ưu tiên làm trước (sau Rescue Hasan)
 					tbl10[v8] = -1.5
 				elseif hintIsland then
 					tbl10[v8] = -1
@@ -6633,7 +6828,9 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 				end
 			end
 
-			table.insert(tbl9, v8)
+			if not HiddenEvent.only or HiddenEvent.only[v8.Name] then
+				table.insert(tbl9, v8)
+			end
 		end
 
 		table.sort(tbl9, function(arg, arg2)
@@ -6809,6 +7006,12 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 
 		HiddenEvent.current = nil
 
+		if n == 0 and HiddenEvent.only then
+			SetHiddenStep("Targeted quest finished")
+			HiddenEvent.checked = 0
+			return
+		end
+
 		if n == 0 then
 			SetHiddenStep("All 39 secrets are complete")
 			SaveSettings("Auto Secret Quest", false)
@@ -6931,7 +7134,7 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 
 				StatusHiddenProgress.SetText(string.format("Secret Quest : %d/39 Quests", doneCount))
 				StatusHiddenQuest.SetText("Title Quest : " .. (HiddenEvent.current or "None"))
-				StatusHiddenStep.SetText("Doing Quest : " .. (Settings["Auto Secret Quest"] and HiddenEvent.step or "None"))
+				StatusHiddenStep.SetText("Doing Quest : " .. (IsSecretQuestOn() and HiddenEvent.step or "None"))
 
 				if Place_Id.sea1() then
 					local v7 = GetHiddenRaidHint()
@@ -6949,7 +7152,6 @@ StatusHiddenBoss = HiddenEventSection.CreateLabel({ Title = "Title Awakened Boss
 	end)
 
 
--- ========== BananaCat UI toggles ==========
 HiddenEventSection.CreateToggle({
 	Title = "Hop Server For Secret Quest",
 	Desc = "Hop khi không có quest / giờ chết",
@@ -6958,7 +7160,6 @@ HiddenEventSection.CreateToggle({
 	SaveSettings("Hop Server For Secret Quest", v)
 end)
 
--- Mirror Vxeze setting key used inside AutoHiddenEvent hop logic
 if Settings["Hidden Hop Dead Hour"] == nil then
 	Settings["Hidden Hop Dead Hour"] = true
 end
@@ -6989,6 +7190,9 @@ HiddenEventSection.CreateToggle({
 	if not arg then
 		HiddenEvent.running = false
 		pcall(HiddenRelease)
+		pcall(function()
+			TweenManager.CancelCurrent()
+		end)
 		return
 	end
 
@@ -7010,7 +7214,6 @@ HiddenEventSection.CreateToggle({
 	task.spawn(function()
 		while Settings["Auto Secret Quest"] and task.wait(0.15) do
 			local ok, result
-			-- Tôn trọng StackFarmOther của BananaCat (ưu tiên chuỗi farm khác)
 			local stackOk = (StackFarmOther ~= false) and (getgenv().StackFarmOther ~= false)
 			if stackOk then
 				ok, result = pcall(AutoHiddenEvent)
@@ -7057,6 +7260,175 @@ HiddenEventSection.CreateToggle({
 		HiddenEvent.running = false
 	end)
 end)
+
+
+BuyMeleeQuestDefs = {
+	["Electro"] = { Name = "Electric Fighting Teacher", Island = "Sky" },
+	["Fishman Karate"] = { Name = "Fishman Karate", Island = "Underwater City" },
+}
+BuyMeleePending = {}
+BuyMeleeDone = {}
+BuyMeleeChecked = {}
+BuyMeleeDriverRunning = false
+BuyMeleeTravelAt = 0
+
+function BuyMeleeQuestDone(def, force)
+	local key = "Sea1/" .. def.Island .. "/" .. def.Name
+	local ok, progress = pcall(GetHiddenProgress, force)
+	if not ok or type(progress) ~= "table" then
+		return nil
+	end
+	local v = progress[key]
+	if v == true or (type(v) == "table" and v.Completed == true) then
+		return true
+	end
+	if next(progress) == nil then
+		return nil
+	end
+	return false
+end
+
+function BuyMeleeStartDriver()
+	if BuyMeleeDriverRunning or HiddenEvent.running then
+		return
+	end
+	BuyMeleeDriverRunning = true
+	BuyMeleeSecretForce = true
+	HiddenEvent.running = true
+
+	task.spawn(function()
+		pcall(function()
+			game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("BuyHaki", "Geppo")
+		end)
+	end)
+
+	if type(HiddenDialogueLoop) == "function" then
+		task.spawn(HiddenDialogueLoop)
+	end
+
+	task.spawn(function()
+		while next(BuyMeleePending) and Place_Id.sea1() and task.wait(0.15) do
+			local ok, result
+			local stackOk = (StackFarmOther ~= false) and (getgenv().StackFarmOther ~= false)
+			if stackOk then
+				ok, result = pcall(AutoHiddenEvent)
+			else
+				SetHiddenStep("Paused while another feature is running")
+				ok = true
+			end
+
+			if not ok then
+				print("[BuyMeleeQuest]", result)
+			end
+
+			pcall(function()
+				if CheckHiddenStall then
+					CheckHiddenStall()
+				end
+			end)
+
+			local anchored = HiddenEvent.anchored
+			if anchored then
+				anchored = tick() - (HiddenEvent.holdTime or 0) > 0.6
+			end
+			if anchored and HiddenRelease then
+				HiddenRelease()
+			end
+
+			local step = tostring(HiddenEvent.step or "")
+			if step:find("^Waiting") or step:find(" stirs on ") or step == "Idle" then
+				task.wait(0.6)
+			end
+		end
+
+		BuyMeleeSecretForce = false
+		pcall(function()
+			if HiddenRelease then
+				HiddenRelease()
+			end
+		end)
+		pcall(function()
+			TweenManager.CancelCurrent()
+		end)
+		HiddenEvent.running = false
+		BuyMeleeDriverRunning = false
+	end)
+end
+
+function BuyMeleeSync()
+	if next(BuyMeleePending) then
+		HiddenEvent.only = BuyMeleePending
+		if Place_Id.sea1() then
+			BuyMeleeStartDriver()
+		end
+	else
+		HiddenEvent.only = nil
+	end
+end
+
+function BuyMeleeCancel(melee)
+	local def = BuyMeleeQuestDefs[melee]
+	if def then
+		BuyMeleePending[def.Name] = nil
+		BuyMeleeSync()
+	end
+end
+
+function BuyMeleeGate(melee)
+	local def = BuyMeleeQuestDefs[melee]
+	if not def then
+		return true
+	end
+	if BuyMeleeDone[melee] then
+		return true
+	end
+
+	local force = tick() - (BuyMeleeChecked[melee] or 0) > 5
+	if force then
+		BuyMeleeChecked[melee] = tick()
+	end
+
+	local done = BuyMeleeQuestDone(def, force)
+	if done == true then
+		BuyMeleeDone[melee] = true
+		BuyMeleePending[def.Name] = nil
+		BuyMeleeSync()
+		pcall(function()
+			HiddenNotify(melee .. " quest done, buying melee", "buymelee" .. melee, "success")
+		end)
+		return true
+	end
+
+	if not Place_Id.sea1() then
+		BuyMeleePending[def.Name] = nil
+		BuyMeleeSync()
+		if tick() - BuyMeleeTravelAt > 20 then
+			BuyMeleeTravelAt = tick()
+			pcall(function()
+				HiddenNotify(melee .. " quest not done, traveling to Sea 1", "buymelee" .. melee .. "travel", "info")
+			end)
+			task.spawn(function()
+				pcall(function()
+					game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("TravelMain")
+				end)
+			end)
+		end
+		return false
+	end
+
+	if done == nil then
+		return false
+	end
+
+	if not BuyMeleePending[def.Name] then
+		BuyMeleePending[def.Name] = true
+		pcall(function()
+			HiddenNotify(melee .. " quest not done, starting hidden quest", "buymelee" .. melee .. "start", "info")
+		end)
+	end
+	BuyMeleeSync()
+	return false
+end
 
 print("[BananaCat] Secret Quest (39) module loaded — section ở đầu Farming Other")
 FishingSection = FarmotherMain.CreateSection("Fishing")
@@ -7581,10 +7953,10 @@ AttackAllMobSection.CreateToggle(
 							task.wait()
 							UsedualFlock()
 							ClickM1(V)
-							if Settings["Select Weapon"] == "Blox Fruit" then
+							if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 								toTarget(V.HumanoidRootPart.CFrame * CFrame.new(-7, getgenv().YPosFruit, 0))
 							else
-								toTarget(V.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+								toTarget(V.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 							end
 						until not IsMobAlive(V) or not Settings["Auto Attack All Mob and Boss"] or not StackFarmOther
 					end
@@ -7621,7 +7993,6 @@ function DetectQuestSeaDragon()
 end
 function checkboat()
 	local V = t.Name
-	V = (function() if Settings["Auto Sea Event With Friend"] and Settings["Auto Sea Event"] then return Settings["Select Friend"] else return V end end)()
 	local y, P, Y = next, game:GetService("Workspace").Boats:GetChildren()
 	for H, H in y, P, Y do
 		if H:IsA("Model") then
@@ -7658,6 +8029,9 @@ function TeleportSeaEvents(V)
 	else
 		local y = V.Name
 		local P = ((Settings["Use Click M1 Fruit For Sea Event"]) and 20 or ((y == "Terrorshark") and 60 or 20))
+		if y == "Terrorshark" and Settings["Use Dragonstorm For Sea Event"] then
+			P = 200
+		end
 		if V:FindFirstChildWhichIsA("Humanoid") and V.Humanoid.Health > 0 then
 			toTarget(V.HumanoidRootPart.CFrame * CFrame.new(0, P, 0))
 		end
@@ -7745,11 +8119,11 @@ function AutoQuestDojo()
 						game:GetService("Players").LocalPlayer.PlayerGui.TransformationHUD.ImageLabel.Visible
 						and (Settings["Auto Finish Train Quest"] or Settings["Auto Finish Train Draco Quest"])
 					then
-						toTarget(P.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
-					elseif Settings["Select Weapon"] == "Blox Fruit" then
+						toTarget(P.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
+					elseif (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 						toTarget(P.HumanoidRootPart.CFrame * CFrame.new(-7, getgenv().YPosFruit, 0))
 					else
-						toTarget(P.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+						toTarget(P.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 					end
 				until not IsMobAlive(P) or not Settings["Auto Quest Dojo Trainer"]
 				if getgenv().QuestTrainer and getgenv().QuestTrainer.CountKillMob then
@@ -7827,10 +8201,10 @@ function AutoQuestDojo()
 				repeat
 					task.wait()
 					sizepart(y)
-					if Settings["Select Weapon"] == "Blox Fruit" then
+					if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 						toTarget(y.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 					else
-						toTarget(y.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+						toTarget(y.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 					end
 					ClickM1(y)
 					UsedualFlock()
@@ -7963,7 +8337,6 @@ game:GetService("Players").LocalPlayer.PlayerGui.Notifications.ChildAdded:Connec
 			wait()
 		until y:FindFirstChild("TranslateMe")
 		local label = y.TranslateMe
-		-- thông báo hoàn thành là 1 khối nhiều dòng (Obtained.../Task completed!/Head back to the Dojo...), nên phải tìm chuỗi con chứ không so sánh bằng
 		local function CheckQuestDone()
 			local text = tostring(label.Text):gsub("<[^>]+>", ""):gsub("{[^}]*}", "")
 			if string.find(text, "Head back to the Dojo", 1, true) then
@@ -7982,7 +8355,6 @@ game:GetService("Players").LocalPlayer.PlayerGui.Notifications.ChildAdded:Connec
 		end
 	end
 end)
--- thông báo hoàn thành quest đi qua remote CommE: ("Notify", "<Color=Green>Task completed!<Color=/>") rồi ("Notify", "Head back to the Dojo to complete more tasks.")
 task.spawn(function()
 	local CommE = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommE")
 	CommE.OnClientEvent:Connect(function(kind, text)
@@ -8049,7 +8421,6 @@ function DetectEmberTemplate()
 end
 function AutoDragonHunter()
 	local y = DetectNpc("Dragon Hunter")
-	-- nhặt ember trước (cả lúc quest vừa xong và chưa nhận quest mới)
 	local ember = DetectEmberTemplate()
 	if ember then
 		Instance.new("IntValue", ember).Name = "Ignored"
@@ -8104,10 +8475,10 @@ function AutoDragonHunter()
 					BringMob(P)
 					UsedualFlock()
 					ClickM1(P)
-					if Settings["Select Weapon"] == "Blox Fruit" then
+					if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 						toTarget(P.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 					else
-						toTarget(P.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+						toTarget(P.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 					end
 				until not IsMobAlive(P) or not Settings["Auto Quest Dragon Hunter"] or not getgenv().QuestHunterDragon
 			end
@@ -8135,10 +8506,10 @@ function AutoDragonHunter()
 					BringMob(P)
 					UsedualFlock()
 					ClickM1(P)
-					if Settings["Select Weapon"] == "Blox Fruit" then
+					if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 						toTarget(P.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 					else
-						toTarget(P.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+						toTarget(P.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 					end
 				until not IsMobAlive(P) or not Settings["Auto Quest Dragon Hunter"] or not getgenv().QuestHunterDragon
 			end
@@ -8147,7 +8518,6 @@ function AutoDragonHunter()
 			if Y then
 				Instance.new("IntValue", Y).Name = "Ignored"
 				local H = tick()
-				-- có Skull Guitar: dùng logic phá tree của farm Tyrant (cầm đàn + click vào tree); không có thì spam skill như cũ
 				local hasGuitar = CheckItemInventory("Skull Guitar")
 				local timeout = hasGuitar and 30 or 15
 				repeat
@@ -8161,7 +8531,6 @@ function AutoDragonHunter()
 								:InvokeServer(unpack({ [1] = "LoadItem", [2] = "Skull Guitar" }))
 						else
 							equiptool(NameWeapon("Gun"))
-							-- click vào model player (HumanoidRootPart) thay vì click vào model tree
 							local hrp = t.Character and t.Character:FindFirstChild("HumanoidRootPart")
 							if hrp then
 								getgenv().ClickWorldPos(hrp.Position)
@@ -8221,13 +8590,64 @@ function DetectBerryCFrame(y)
 		end
 	end
 end
-function DetectBerry()
-	local y, P, Y = next, game:GetService("CollectionService"):GetTagged("BerryBush")
-	for H, H in y, P, Y do
-		if DetectBerryCFrame(H:GetAttributes()) then
-			return H
+getgenv().PriorityBerries = { "Pink Pig Berry", "Red Cherry Berry", "White Cloud Berry" }
+function BerryNameIsPriority(v)
+	if typeof(v) ~= "string" then
+		return false
+	end
+	local lv = v:lower()
+	for _, n in ipairs(getgenv().PriorityBerries) do
+		if lv:find(n:lower(), 1, true) then
+			return true
 		end
 	end
+	return false
+end
+function IsPriorityBerry(bush)
+	local function check(inst)
+		if not inst then
+			return false
+		end
+		if BerryNameIsPriority(inst.Name) then
+			return true
+		end
+		for _, v in pairs(inst:GetAttributes()) do
+			if BerryNameIsPriority(v) then
+				return true
+			end
+		end
+		return false
+	end
+	if check(bush) or check(bush.Parent) then
+		return true
+	end
+	for _, c in ipairs(bush:GetChildren()) do
+		if check(c) then
+			return true
+		end
+	end
+	return false
+end
+function DetectBerry()
+	local bestPri, bestPriDist = nil, 1 / 0
+	local bestAny, bestAnyDist = nil, 1 / 0
+	for _, H in ipairs(game:GetService("CollectionService"):GetTagged("BerryBush")) do
+		if H.Parent and DetectBerryCFrame(H:GetAttributes()) then
+			local ok, pos = pcall(function()
+				return H.Parent.WorldPivot.Position
+			end)
+			if ok then
+				local d = t:DistanceFromCharacter(pos)
+				if d < bestAnyDist then
+					bestAny, bestAnyDist = H, d
+				end
+				if d < bestPriDist and IsPriorityBerry(H) then
+					bestPri, bestPriDist = H, d
+				end
+			end
+		end
+	end
+	return bestPri or bestAny
 end
 function DetectBerryESP()
 	local y, P, Y = next, game:GetService("CollectionService"):GetTagged("BerryBush")
@@ -8435,10 +8855,10 @@ RaidLawSection.CreateToggle(
 								sizepart(P)
 								UsedualFlock()
 								ClickM1(P)
-								if Settings["Select Weapon"] == "Blox Fruit" then
+								if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 									toTarget(P.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 								else
-									toTarget(P.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+									toTarget(P.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 								end
 							until not IsMobAlive(P) or not Settings["Auto Buy Chip and Attack Law"]
 						elseif
@@ -8459,7 +8879,29 @@ RaidLawSection.CreateToggle(
 	end
 )
 FarmObservationSection = FarmotherMain.CreateSection("Farm Observation")
--- Rejoin lai chinh server hien tai (copy JobId hien tai -> join lai JobId do) thay vi hop sang server moi
+KenLevelLabel = FarmObservationSection.CreateLabel({ Title = "Ken Level : ..." })
+_G.__KenLevelToken = (_G.__KenLevelToken or 0) + 1
+__kenToken = _G.__KenLevelToken
+task.spawn(function()
+	while _G.__KenLevelToken == __kenToken do
+		local ok, result = pcall(function()
+			return game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("KenTalk", "Status")
+		end)
+		local num
+		if ok then
+			if type(result) == "number" then
+				num = result
+			else
+				local str = tostring(result)
+				num = tonumber(str:match("^%s*(%d+)") or str:match("(%d+)"))
+			end
+		end
+		pcall(function()
+			KenLevelLabel.SetText("Ken Level : " .. (num and tostring(num) or "N/A"))
+		end)
+		task.wait(2.5)
+	end
+end)
 __rejoining = false
 function RejoinCurrentServer()
 	if __rejoining then
@@ -8485,7 +8927,6 @@ function RejoinCurrentServer()
 			game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, jobId, game.Players.LocalPlayer)
 		end)
 	end
-	-- doi teleport chay; neu 10s van chua roi server (teleport fail) thi cho phep thu lai
 	task.delay(10, function()
 		__rejoining = false
 	end)
@@ -8565,10 +9006,10 @@ function ObservationV2()
 					BringMob(y)
 					UsedualFlock()
 					ClickM1(y)
-					if Settings["Select Weapon"] == "Blox Fruit" then
+					if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 						toTarget(y.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 					else
-						toTarget(y.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+						toTarget(y.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 					end
 				until not IsMobAlive(y) or not Settings["Auto UP Observation V2"]
 			end
@@ -8589,10 +9030,10 @@ function ObservationV2()
 				repeat
 					wait()
 					sizepart(y)
-					if Settings["Select Weapon"] == "Blox Fruit" then
+					if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 						toTarget(y.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 					else
-						toTarget(y.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+						toTarget(y.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 					end
 					ClickM1(y)
 					equiptool(NameWeapon(Settings["Select Weapon"]))
@@ -8805,10 +9246,10 @@ function FarmSelectMob()
 			BringMob(P)
 			UsedualFlock()
 			ClickM1(P)
-			if Settings["Select Weapon"] == "Blox Fruit" then
+			if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 				toTarget(P.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 			else
-				toTarget(P.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+				toTarget(P.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 			end
 		until not IsMobAlive(P) or not Settings["Kill Mob"] or not StackFarmOther
 	end
@@ -8905,10 +9346,10 @@ function AutoKillBoss()
 		repeat
 			wait()
 			sizepart(y)
-			if Settings["Select Weapon"] == "Blox Fruit" then
+			if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 				toTarget(y.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 			else
-				toTarget(y.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+				toTarget(y.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 			end
 			ClickM1(y)
 			UsedualFlock()
@@ -8949,6 +9390,46 @@ AutoKillBossSection.CreateToggle(
 end
 function __BF_GraftPage1()
 DFRaidMain = Main.CreatePage({ Page_Name = "Fruit and Raid, Dungeon", Page_Title = "Fruit and Raid and Dungeon Tab" })
+RaidLawRaidSection = DFRaidMain.CreateSection("Raid Law")
+RaidLawRaidSection.CreateToggle(
+	{ Title = "Auto Buy Chip and Attack Law", Desc = "Mua Microchip, danh Order boss roi bam Raid Summon", Default = false },
+	function(y)
+		SaveSettings("Auto Buy Chip and Attack Law", y)
+		if y and not getgenv().__RaidLawRunning then
+			getgenv().__RaidLawRunning = true
+			spawn(function()
+				while Settings["Auto Buy Chip and Attack Law"] and (task.wait()) do
+					pcall(function()
+						if DetectItemPlr("Core Brain") then
+							fireclickdetector(game:GetService("Workspace").Map.CircleIsland.RaidSummon.Button.Main.ClickDetector)
+							return
+						end
+						local P = CheckNameBoss("Order")
+						if P then
+							repeat
+								task.wait()
+								sizepart(P)
+								UsedualFlock()
+								ClickM1(P)
+								if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
+									toTarget(P.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
+								else
+									toTarget(P.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
+								end
+							until not IsMobAlive(P) or not Settings["Auto Buy Chip and Attack Law"]
+						elseif not DetectItemPlr("Microchip") and game.Players.LocalPlayer.Data.Fragments.Value >= 1000 then
+							BuyChipLaw()
+							wait(2)
+						elseif DetectItemPlr("Microchip") then
+							fireclickdetector(game:GetService("Workspace").Map.CircleIsland.RaidSummon.Button.Main.ClickDetector)
+						end
+					end)
+				end
+				getgenv().__RaidLawRunning = false
+			end)
+		end
+	end
+)
 DevilFruitSection = DFRaidMain.CreateSection("Devil Fruit")
 DevilFruitSection.CreateToggle(
 	{ Title = "Random Devil Fruit", Desc = nil, Default = Settings["Random Devil Fruit"] or false },
@@ -9138,6 +9619,20 @@ getgenv().CheckIsplayingRaid = function()
 	end
 end
 getgenv().buychip = true
+function IsRaidKillAuraActive()
+	if not Settings["Kill Aura Raid"] then
+		return false
+	end
+	if not (Settings["Auto Raid"] or Settings["Auto Multi Raid"]) then
+		return false
+	end
+	local ok, res = pcall(function()
+		local isl = GetLastRaidIsland()
+		local n = isl and tonumber((isl.Name:gsub("Island ", "")))
+		return n ~= nil and n >= 4
+	end)
+	return ok and res or false
+end
 RaidsSection.CreateToggle({ Title = "Auto Raid", Desc = nil, Default = Settings["Auto Raid"] or false }, function(b)
 	if b then
 		spawn(function()
@@ -9149,7 +9644,6 @@ RaidsSection.CreateToggle({ Title = "Auto Raid", Desc = nil, Default = Settings[
 							"Workspace"
 						).Map["Boat Castle"].RaidSummon2.Button
 							:FindFirstChild("Main")) else return l end end)()
-					print("cc")
 					if not t.PlayerGui.Main.TopHUDList.RaidTimer.Visible and not CheckInRaid() then
 						if getgenv().TickTeleCastle and tick() - getgenv().TickTeleCastle < 5 then
 							return
@@ -9196,7 +9690,7 @@ RaidsSection.CreateToggle({ Title = "Auto Raid", Desc = nil, Default = Settings[
 								ClickM1(l)
 								sizepart(l)
 								BringMobRaid(l)
-								if Settings["Select Weapon"] == "Blox Fruit" then
+								if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 									toTarget(l.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 								else
 									toTarget(l.HumanoidRootPart.CFrame * CFrame.new(10, 20, 0))
@@ -9259,6 +9753,35 @@ RaidsSection.CreateToggle({ Title = "Auto Raid", Desc = nil, Default = Settings[
 	end
 	SaveSettings("Auto Raid", b)
 end)
+RaidsSection.CreateToggle(
+	{ Title = "Kill Aura Raid", Desc = "Island 4-5: kill any mob within 300 studs while farming (needs Auto Raid / Auto Multi Raid)", Default = Settings["Kill Aura Raid"] or false },
+	function(b)
+		if b and not (Settings["Auto Raid"] or Settings["Auto Multi Raid"]) then
+			A.CreateNoti({ Title = "Banana Cat Hub", Desc = "Turn On Auto Raid Plz", ShowTime = 5 })
+		end
+		SaveSettings("Kill Aura Raid", b)
+		if b and not getgenv().__KillAuraRaidRunning then
+			getgenv().__KillAuraRaidRunning = true
+			spawn(function()
+				while Settings["Kill Aura Raid"] and task.wait(0.1) do
+					pcall(function()
+						if not IsRaidKillAuraActive() then
+							return
+						end
+						for _, mob in ipairs(game.Workspace.Enemies:GetChildren()) do
+							local hrp = mob:FindFirstChild("HumanoidRootPart")
+							local hum = mob:FindFirstChild("Humanoid")
+							if hrp and hum and IsMobAlive(mob) and t:DistanceFromCharacter(hrp.Position) <= 300 then
+								hum:ChangeState(Enum.HumanoidStateType.Dead)
+							end
+						end
+					end)
+				end
+				getgenv().__KillAuraRaidRunning = false
+			end)
+		end
+	end
+)
 RaidsSection.CreateToggle(
 	{ Title = "Hop Sever Raid", Desc = nil, Default = Settings["Hop Sever Raid"] or false },
 	function(b)
@@ -9397,7 +9920,7 @@ function Multiraid(b)
 				task.wait()
 				UsedualFlock()
 				ClickM1(E)
-				if Settings["Select Weapon"] == "Blox Fruit" then
+				if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 					toTarget(E.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 				else
 					toTarget(E.HumanoidRootPart.CFrame * CFrame.new(10, 20, 0))
@@ -9458,7 +9981,6 @@ function E()
 	return "DLCBoxData", nil
 end
 function b()
-	-- chạy thẳng lệnh mua gacha từ xa
 	local ok, res = pcall(function()
 		return game:GetService("ReplicatedStorage").Modules.Net["RF/GachaNetworkRF"]:InvokeServer({
 			Context = "Purchase",
@@ -9816,47 +10338,99 @@ DungeonSection.CreateDropdown(
 		SaveSettings("Select Card Priority", table.clone(b))
 	end
 )
-function AutoPickDungeonCard()
-	local b, E, l, y = Settings["Select Card Priority"] or {}, {}, 1 / 0
-	for P, Y in pairs(t.PlayerGui:GetChildren()) do repeat 
-		local H, C, J =
-			Y:FindFirstChild("DisplayName", true),
-			Y:FindFirstChild("BuffDescription", true),
-			Y:FindFirstChildWhichIsA("TextButton", true)
-		if H and C and J and (H:IsA("TextLabel")) then
-			P = DisplayNameToKey[stripFont(H.Text)]
-			if P then
-				if IsSkillCooldown(P) then
-					break
-				end
-				for Y, H in ipairs(b) do
-					if DisplayNameToKey[H] == P then
-						if Y < l then
-							l, y = Y, J
-						end
-						break
+function ClickCardButton(btn)
+	for _, sig in ipairs({ "Activated", "MouseButton1Click", "MouseButton1Down", "MouseButton1Up" }) do
+		local ok, conns = pcall(getconnections, btn[sig])
+		if ok and conns and #conns > 0 then
+			for _, c in ipairs(conns) do
+				pcall(function()
+					if c.Function then
+						c.Function()
+					else
+						c:Fire()
 					end
-				end
-				table.insert(E, J)
+				end)
 			end
+			return true
 		end
-	until true end
-	if y then
-		print("AUTO PICK (PRIORITY INDEX):", l)
-		for l, l in pairs(getconnections(y.Activated)) do
-			l.Function()
-		end
-		return true
 	end
-	if #E > 0 then
-		b = E[math.random(1, #E)]
-		print("AUTO PICK (RANDOM)")
-		for E, E in pairs(getconnections(b.Activated)) do
-			E.Function()
+	if firesignal then
+		local ok = pcall(firesignal, btn.Activated)
+		if ok then
+			return true
 		end
-		return true
+		ok = pcall(firesignal, btn.MouseButton1Click)
+		return ok
 	end
 	return false
+end
+function GetDungeonCards()
+	local cards, seen = {}, {}
+	local pg = t:FindFirstChild("PlayerGui")
+	if not pg then
+		return cards
+	end
+	for _, lbl in ipairs(pg:GetDescendants()) do
+		if lbl.Name == "DisplayName" and lbl:IsA("TextLabel") and lbl.Visible and lbl.Text ~= "" then
+			local key = DisplayNameToKey[stripFont(lbl.Text)]
+			if key then
+				local node, btn = lbl.Parent, nil
+				for _ = 1, 8 do
+					if not node or node == pg then
+						break
+					end
+					if node:FindFirstChild("BuffDescription", true) then
+						local count = 0
+						for _, d in ipairs(node:GetDescendants()) do
+							if d.Name == "DisplayName" and d:IsA("TextLabel") then
+								count = count + 1
+							end
+						end
+						if count == 1 then
+							btn = node:IsA("GuiButton") and node or node:FindFirstChildWhichIsA("GuiButton", true)
+							if btn then
+								break
+							end
+						end
+					end
+					node = node.Parent
+				end
+				if btn and not seen[btn] then
+					seen[btn] = true
+					cards[#cards + 1] = { key = key, btn = btn }
+				end
+			end
+		end
+	end
+	return cards
+end
+function AutoPickDungeonCard()
+	local prio = Settings["Select Card Priority"] or {}
+	local rank = {}
+	for i, name in ipairs(prio) do
+		local key = DisplayNameToKey[name]
+		if key and not rank[key] then
+			rank[key] = i
+		end
+	end
+	local cards = GetDungeonCards()
+	if #cards == 0 then
+		return false
+	end
+	local best, bestRank = nil, math.huge
+	for _, c in ipairs(cards) do
+		local r = rank[c.key]
+		if r and r < bestRank then
+			best, bestRank = c, r
+		end
+	end
+	if best then
+		print("AUTO PICK (PRIORITY INDEX):", bestRank, best.key)
+	else
+		best = cards[math.random(1, #cards)]
+		print("AUTO PICK (RANDOM):", best.key)
+	end
+	return ClickCardButton(best.btn)
 end
 DungeonSection.CreateToggle(
 	{
@@ -9985,12 +10559,12 @@ DungeonSection.CreateToggle(
 		end
 		task.spawn(function()
 			while Settings["Auto Pick Card Dungeon"] do
-				task.wait()
-				local b, b = pcall(function()
-					AutoPickDungeonCard()
-				end)
-				if b then
-					warn("[Auto Pick Card Dungeon Error]:", b)
+				task.wait(0.3)
+				local ok, res = pcall(AutoPickDungeonCard)
+				if not ok then
+					warn("[Auto Pick Card Dungeon Error]:", res)
+				elseif res then
+					task.wait(1.5)
 				end
 			end
 		end)
@@ -10139,6 +10713,7 @@ game.workspace._WorldOrigin.ChildAdded:Connect(function(y)
 	if
 		(Settings["Auto Sea Event"] or Settings["Auto Shipwright"])
 		and Settings["Auto Dodge Skill Terrorshark"]
+		and not Settings["Use Dragonstorm For Sea Event"]
 		and getgenv().PathTerrorshark
 	then
 		if
@@ -10171,7 +10746,7 @@ function AddAnimationSeabeastPlayed(y)
 				task.wait(1.9)
 			end
 			local l = tick()
-			getgenv().PosDodgeskill = 600
+			getgenv().PosDodgeskill = 400
 			repeat
 				task.wait()
 			until not y.IsPlaying or tick() - l >= 10
@@ -10251,8 +10826,13 @@ function l(y)
 end
 y, P, Y = setmetatable({}, { __mode = "k" }), 0, getgenv().BoatSpeed
 if type(Y) ~= "table" then
-	Y = { cap = 100, ceiling = 1 / 0, nextRaise = 0 }
+	Y = { cap = 150, ceiling = 1 / 0, nextRaise = 0, lastHit = 0 }
 	getgenv().BoatSpeed = Y
+else
+	Y.cap = math.max(Y.cap or 0, 150)
+	Y.ceiling = 1 / 0
+	Y.nextRaise = 0
+	Y.lastHit = 0
 end
 H = 5
 function C()
@@ -10261,7 +10841,28 @@ function C()
 	end)
 	return J and F / 1000 or 0.1
 end
-function manageTween(J, F, q, c)
+TIKI_POS = Vector3.new(-16204.08, 9.09, 479.23)
+TIKI_AVOID_R = 3000
+TIKI_LIFT_Y = 1000
+function BoatHasPassenger(seat)
+	local boat = seat.Parent
+	if not boat then
+		return false
+	end
+	for _, v in ipairs(boat:GetChildren()) do
+		if v.Name == "Cannon" then
+			local s = v:FindFirstChild("Seat")
+			if s and (s.Occupant or s:FindFirstChild("SeatWeld")) then
+				return true
+			end
+		end
+	end
+	return false
+end
+function flatDist(a, b)
+	return Vector3.new(a.X - b.X, 0, a.Z - b.Z).Magnitude
+end
+function manageTween(J, F, q, c, lvl)
 	if not J or not J:IsA("BasePart") or typeof(F) ~= "CFrame" then
 		return
 	end
@@ -10273,6 +10874,7 @@ function manageTween(J, F, q, c)
 	if D and D.TweenKey == c and D.PlaybackState == Enum.PlaybackState.Playing then
 		D.Target = F
 		D.Speed = q
+		D.Level = lvl and true or nil
 		getgenv()[c] = D
 		return D
 	end
@@ -10286,15 +10888,58 @@ function manageTween(J, F, q, c)
 		end)
 	end
 	local D, r, n, u, W =
-		{ PlaybackState = Enum.PlaybackState.Playing, Speed = q, Target = F, TweenKey = c },
+		{ PlaybackState = Enum.PlaybackState.Playing, Speed = q, Target = F, TweenKey = c, Level = lvl and true or nil },
 		false,
 		false,
 		false,
 		J.CFrame
 	local noclipConn
+	local liftedHigh = false
+	local baseY = J.Position.Y
+	local holdUntil = 0
+	local levelY = nil
+	local function bvHold(on)
+		local bv = J:FindFirstChild("BodyVelocity")
+		if not bv then
+			return
+		end
+		if on then
+			if bv:GetAttribute("__origMF") == nil then
+				bv:SetAttribute("__origMF", bv.MaxForce)
+			end
+			bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+			bv.Velocity = Vector3.new(0, 0, 0)
+		else
+			local o = bv:GetAttribute("__origMF")
+			if o ~= nil then
+				bv.MaxForce = o
+				bv:SetAttribute("__origMF", nil)
+			end
+		end
+	end
 	local function F(q)
 		if u then
 			return
+		end
+		if levelY then
+			-- dang giu Y 160/1000 voi player tren phao: giu MaxForce, chi tra khi khong con tween va het nguoi ngoi
+			task.delay(4, function()
+				if J and J.Parent and not y[J] and not BoatHasPassenger(J) then
+					bvHold(false)
+				end
+			end)
+		elseif liftedHigh and J and J.Parent then
+			liftedHigh = false
+			pcall(function()
+				J.CFrame = CFrame.new(J.Position.X, baseY, J.Position.Z) * (J.CFrame - J.CFrame.Position)
+				J.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+				J.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+			end)
+			task.delay(1, function()
+				bvHold(false)
+			end)
+		else
+			bvHold(false)
 		end
 		u = true
 		if noclipConn then
@@ -10343,8 +10988,6 @@ function manageTween(J, F, q, c)
 	P = P + (1)
 	l(true)
 	getgenv().noclip = true
-	-- NOCLIP THUYỀN: set CanCollide=false mỗi frame (Stepped, trước bước physics) cho cả thuyền và nhân vật.
-	-- Trước đây chỉ set 1 lần nên game/Humanoid bật lại collision -> thuyền va model đảo, bị đẩy lùi và tween bị giật ngược.
 	do
 		local nc_parts, nc_next = {}, 0
 		noclipConn = x.Stepped:Connect(function()
@@ -10354,7 +10997,6 @@ function manageTween(J, F, q, c)
 			if tick() >= nc_next then
 				nc_next = tick() + 0.5
 				nc_parts = {}
-				-- model thuyền = model nằm ngay dưới workspace.Boats
 				local boat = J.Parent
 				while boat and boat.Parent and boat.Parent.Name ~= "Boats" and boat.Parent ~= workspace do
 					boat = boat.Parent
@@ -10396,17 +11038,79 @@ function manageTween(J, F, q, c)
 					F(Enum.PlaybackState.Cancelled)
 					break
 				end
-				local y, P = math.min(D.Speed, Y.cap), D.Target
+				if D.Level then
+					-- chi khi co player ngoi phao: trong 3000 cua Tiki = Y 1000, ngoai 3000 = Y 160
+					local wantY = nil
+					if BoatHasPassenger(J) then
+						local nearTiki = game.PlaceId == getgenv().CheckPlaceId and flatDist(J.Position, TIKI_POS) < TIKI_AVOID_R
+						wantY = nearTiki and 1000 or 160
+					end
+					if wantY ~= levelY then
+						levelY = wantY
+						if wantY then
+							bvHold(true)
+							holdUntil = tick() + 1
+							W = CFrame.new(J.Position.X, wantY, J.Position.Z) * (J.CFrame - J.CFrame.Position)
+							J.CFrame = W
+							J.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+							J.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+						else
+							task.delay(1, function()
+								if not levelY then
+									bvHold(false)
+								end
+							end)
+						end
+					end
+				elseif game.PlaceId == getgenv().CheckPlaceId and BoatHasPassenger(J) then
+					local tgt = D.Target.Position
+					local hz = flatDist(J.Position, TIKI_POS)
+					if not liftedHigh then
+						if hz < TIKI_AVOID_R and flatDist(tgt, TIKI_POS) > TIKI_AVOID_R then
+							liftedHigh = true
+							baseY = J.Position.Y
+							bvHold(true)
+							holdUntil = tick() + 1
+							W = CFrame.new(J.Position.X, baseY + TIKI_LIFT_Y, J.Position.Z) * (J.CFrame - J.CFrame.Position)
+							J.CFrame = W
+							J.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+							J.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+						end
+					elseif hz >= TIKI_AVOID_R + 200 or flatDist(J.Position, tgt) < 50 then
+						liftedHigh = false
+						bvHold(true)
+						holdUntil = tick() + 1
+						W = CFrame.new(J.Position.X, tgt.Y, J.Position.Z) * (J.CFrame - J.CFrame.Position)
+						J.CFrame = W
+						J.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+						J.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+						task.delay(1.5, function()
+							if not liftedHigh then
+								bvHold(false)
+							end
+						end)
+					end
+				end
+				if tick() < holdUntil then
+					J.CFrame = W
+					J.AssemblyLinearVelocity = Vector3.new(0.0, 0.0, 0.0)
+					J.AssemblyAngularVelocity = Vector3.new(0.0, 0.0, 0.0)
+				else
+				local y, P = math.min(D.Speed, Y.cap), (levelY and (CFrame.new(D.Target.Position.X, levelY, D.Target.Position.Z) * (D.Target - D.Target.Position)) or (liftedHigh and (CFrame.new(D.Target.Position.X, baseY + TIKI_LIFT_Y, D.Target.Position.Z) * (D.Target - D.Target.Position)) or D.Target))
 				local q, c = (P.Position - W.Position).Magnitude, y * l
 				if (J.Position - W.Position).Magnitude > math.max(20, c * 3) then
-					Y.ceiling = y * 0.9
-					Y.cap = math.max(y * 0.7, 40)
+					Y.lastHit = tick()
+					Y.ceiling = math.max(y * 0.9, 150)
+					Y.cap = math.max(y * 0.7, 100)
 					Y.nextRaise = tick() + math.max(C() * 4, 1)
 					W = J.CFrame
 					c, q = Y.cap * l, (P.Position - W.Position).Magnitude
-				elseif q > c and Y.cap <= D.Speed and Y.cap < Y.ceiling and tick() >= Y.nextRaise then
-					Y.cap = math.min(Y.cap * 1.08, Y.ceiling)
-					Y.nextRaise = tick() + math.max(C() * 4, 1)
+				elseif q > c and Y.cap < D.Speed and tick() >= Y.nextRaise then
+					if tick() - (Y.lastHit or 0) > 8 then
+						Y.ceiling = Y.ceiling * 1.15
+					end
+					Y.cap = math.min(Y.cap * 1.12, Y.ceiling)
+					Y.nextRaise = tick() + math.max(C() * 4, 0.75)
 				end
 				if q <= c or q <= H then
 					W = P
@@ -10420,6 +11124,7 @@ function manageTween(J, F, q, c)
 				J.CFrame = W
 				J.AssemblyLinearVelocity = Vector3.new(0.0, 0.0, 0.0)
 				J.AssemblyAngularVelocity = Vector3.new(0.0, 0.0, 0.0)
+				end
 			end
 		end
 		if not u then
@@ -10428,11 +11133,11 @@ function manageTween(J, F, q, c)
 	end)
 	return D
 end
-function l(y, P, Y)
+function l(y, P, Y, lvl)
 	if not (y and (y:FindFirstChild("VehicleSeat"))) then
 		return
 	end
-	return manageTween(y.VehicleSeat, P, Y or 350, "TweenBoat")
+	return manageTween(y.VehicleSeat, P, Y or 350, "TweenBoat", lvl)
 end
 function y()
 	local P = getgenv().TweenBoat
@@ -10445,7 +11150,6 @@ function y()
 end
 NumberSpinBoat = NumberSpinBoat or 1
 if not CFrameSpinBoat then
-	-- PLACEHOLDER: ban goc bi mat, dung 6 goc xoay 60 do quanh truc Y
 	CFrameSpinBoat = {}
 	for i = 0, 5 do
 		CFrameSpinBoat[i + 1] = CFrame.Angles(0, math.rad(60 * i), 0)
@@ -10493,10 +11197,105 @@ function TurnOffNoclipBoat(P)
 		end
 	end
 end
+function GetOwnerDrivenBoat(name)
+	local plr = game:GetService("Players"):FindFirstChild(name or "")
+	local hum = plr and plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+	local seat = hum and hum.SeatPart
+	if seat and seat.Name == "VehicleSeat" then
+		return seat.Parent
+	end
+	return nil
+end
+-- san cung: owner reset/chet thi acc san cung cung reset de hoi sinh gan owner, do phai bay ve lau
+task.spawn(function()
+	local lastChar, diedMarked, lastReset = nil, nil, 0
+	while task.wait(0.3) do
+		pcall(function()
+			if not (Settings["Auto Sea Event With Friend"] and Settings["Auto Sea Event"]) then
+				lastChar = nil
+				return
+			end
+			local ownerName = Settings["Select Owner Boat"]
+			local owner = ownerName and game:GetService("Players"):FindFirstChild(ownerName)
+			local ch = owner and owner.Character
+			local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+			local ownerDied = hum ~= nil and hum.Health <= 0 and diedMarked ~= ch
+			local ownerNewChar = lastChar ~= nil and ch ~= lastChar and diedMarked ~= lastChar
+			if ownerDied then
+				diedMarked = ch
+			end
+			lastChar = ch
+			if (ownerDied or ownerNewChar) and tick() - lastReset > 3 then
+				local myHum = t.Character and t.Character:FindFirstChildOfClass("Humanoid")
+				if myHum and myHum.Health > 0 then
+					lastReset = tick()
+					myHum.Health = 0
+				end
+			end
+		end)
+	end
+end)
+function checkFriendCannon(boat)
+	if not boat then
+		return false
+	end
+	for _, v in ipairs(boat:GetChildren()) do
+		if v.Name == "Cannon" then
+			local seat = v:FindFirstChild("Seat")
+			if seat and not seat:FindFirstChild("SeatWeld") then
+				return v
+			end
+		end
+	end
+	return false
+end
+function MultiSeaReady(boat)
+	if not Settings["Muti Farm Sea Event"] then
+		return true
+	end
+	local sel = Settings["Select Muti Player Sea Event"]
+	if type(sel) ~= "table" then
+		return true
+	end
+	for name, on in pairs(sel) do
+		if on then
+			local plr = game:GetService("Players"):FindFirstChild(name)
+			if plr then
+				local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+				local seat = hum and hum.SeatPart
+				if not (seat and seat.Name == "Seat" and seat.Parent and seat.Parent.Name == "Cannon" and seat.Parent.Parent == boat) then
+					return false
+				end
+			end
+		end
+	end
+	return true
+end
 function BuyBoatAndTeleBoat(P)
 	local Y = checkboat()
 	if Settings["Auto Sea Event With Friend"] and Settings["Auto Sea Event"] then
-		toTarget(game:GetService("Players")[Settings["Select Friend"]].Character.HumanoidRootPart.CFrame)
+		-- san cung: chi tele len phao trong cua thuyen owner dang lai. Da ngoi roi thi dung yen, khong bam theo nua.
+		local hum = t.Character and t.Character:FindFirstChildOfClass("Humanoid")
+		local hrp = t.Character and t.Character:FindFirstChild("HumanoidRootPart")
+		if not hum or not hrp then
+			return
+		end
+		if hum.Sit then
+			if hrp:FindFirstChild("FloatForce") then
+				TweenManager.CancelCurrent()
+			end
+			return
+		end
+		local ownerName = Settings["Select Owner Boat"]
+		if not ownerName or not game:GetService("Players"):FindFirstChild(ownerName) then
+			WarnOnce("SelectFriend", "Chon owner o Sea Event > Select Owner Boat truoc da.")
+			return
+		end
+		local boat = GetOwnerDrivenBoat(ownerName)
+		local cannon = boat and checkFriendCannon(boat)
+		if cannon then
+			toTarget(cannon.Seat.CFrame)
+		end
 		return
 	end
 	if not Settings["Auto Sea Event"] and not P then
@@ -10538,12 +11337,29 @@ function BuyBoatAndTeleBoat(P)
 		task.spawn(function()
 			NoclipBoat(Y)
 		end)
+		if Settings["Muti Farm Sea Event"] and t.Character.Humanoid.Sit and not MultiSeaReady(Y) then
+			getgenv().TweenBoat = getgenv().TweenBoat and (function() pcall(function() getgenv().TweenBoat:Cancel() end) return nil end)()
+			WarnOnce("MultiWait", "Cho cac acc da chon ngoi du vao phao...")
+			return
+		end
+		-- co player khac ngoi phao: tween Y 160; chi minh localplayer tren thuyen: giu Y mac dinh cua mode tween boat
+		-- Y mac dinh cua mode tween boat (nho lai khi thuyen dang o muc 160/1000 do co player tren phao)
+		local pivotY = Y.WorldPivot.Y
+		if math.abs(pivotY - 160) > 5 and math.abs(pivotY - 1000) > 5 then
+			getgenv().__SeaBoatDefaultY = pivotY
+		end
+		local seaY = getgenv().__SeaBoatDefaultY or pivotY
+		if BoatHasPassenger(Y.VehicleSeat) then
+			-- co player tren phao: trong 3000 cua Tiki = Y 1000, ngoai = Y 160 (manageTween tu nhay Y theo vi tri)
+			local nearTiki = game.PlaceId == getgenv().CheckPlaceId and flatDist(Y.VehicleSeat.Position, TIKI_POS) < TIKI_AVOID_R
+			seaY = nearTiki and 1000 or 160
+		end
 		if Settings["Tween Until Have Sea Event"] then
-			local H = CFrame.new(-118834.515625, Y.WorldPivot.Y, 999920.0494155884)
+			local H = CFrame.new(-118834.515625, seaY, 999920.0494155884)
 			if not t.Character.Humanoid.Sit then
 				toTarget(Y.VehicleSeat.CFrame)
 			else
-				l(Y, H, 350)
+				l(Y, H, 350, true)
 			end
 		else
 			local H, C = CFrame.new(654.3875732421875, Y.WorldPivot.Y, 6321.95947265625), DecectPartRoughSea()
@@ -10555,12 +11371,12 @@ function BuyBoatAndTeleBoat(P)
 			end
 			getgenv().RoughSea = Settings["Teleport Boat Other CFrame if Rough Sea"] and V or 0
 			H = (function() if game.PlaceId == getgenv().CheckPlaceId then return SelectedZoneCFrame() * CFrame.new(0, Y.WorldPivot.Y, 0 + RoughSea) else return H end end)()
-			if (Y.VehicleSeat.Position - H.Position).Magnitude > 200 then
-				C = CFrame.new(H.Position.X, Y.WorldPivot.Y, H.Position.Z)
+			if flatDist(Y.VehicleSeat.Position, H.Position) > 200 then
+				C = CFrame.new(H.Position.X, seaY, H.Position.Z)
 				if not t.Character.Humanoid.Sit then
 					toTarget(Y.VehicleSeat.CFrame)
 				else
-					l(Y, C, 350)
+					l(Y, C, 350, true)
 				end
 			else
 				if Settings["Auto Repair Ur Ship"] then
@@ -10572,16 +11388,19 @@ function BuyBoatAndTeleBoat(P)
 						)
 						C = string.split(C, "/")
 						if tonumber(C[1]) < tonumber(C[2]) then
+							getgenv().RepairShipHoldUntil = tick() + 1.2
 							if t:DistanceFromCharacter(Y.PrimaryPart.Position) < 20 then
 								if not t.Character.Humanoid.Sit then
 									if t.Character:FindFirstChild("_RepairHammer") then
 										if t.Character._RepairHammer:FindFirstChild("M1UP") then
 											t.Character._RepairHammer.M1UP:Destroy()
 										elseif not t.Character._RepairHammer:GetAttribute("Repairing") then
+											getgenv().RepairShipHoldUntil = tick() + 1.2
 											t.Character._RepairHammer.M1Down:FireServer("Default")
 											task.wait(0.5)
 										end
 									else
+										getgenv().RepairShipHoldUntil = tick() + 3.5
 										game:GetService("ReplicatedStorage").Remotes.SubclassNetwork.UseSubclass
 											:InvokeServer(unpack({ [1] = { Action = "RequestHammer" } }))
 										task.wait(3)
@@ -10600,7 +11419,7 @@ function BuyBoatAndTeleBoat(P)
 					if not t.Character.Humanoid.Sit then
 						toTarget(Y.VehicleSeat.CFrame)
 					end
-					local P = CFrame.new(H.Position.X, Y.WorldPivot.Y, H.Position.Z)
+					local P = CFrame.new(H.Position.X, seaY, H.Position.Z)
 					if DetectSeaEvents(true) then
 						local H = tick()
 						repeat
@@ -10608,7 +11427,7 @@ function BuyBoatAndTeleBoat(P)
 							toTarget(P * CFrame.new(0, 2500, 0))
 						until tick() - H >= 12
 					elseif t.Character.Humanoid.Sit then
-						l(Y, P, 350)
+						l(Y, P, 350, true)
 					end
 				end
 			end
@@ -10638,28 +11457,172 @@ function WarnOnce(b, l)
 		A.CreateNoti({ Title = "Banana Cat Hub", Desc = l, ShowTime = 5 })
 	end)
 end
+-- Sea Beast: theo doi Submerge/Reappear/Death (theo ten animation) + HP text, de doi sea khi lan va bo ngay khi chet
+SeaBeastStates = SeaBeastStates or setmetatable({}, { __mode = "k" })
+function seaBeastApplyTrack(st, track)
+	local n1, n2 = "", ""
+	pcall(function()
+		n1 = tostring(track.Name):lower()
+	end)
+	pcall(function()
+		n2 = tostring(track.Animation.Name):lower()
+	end)
+	local function has(w)
+		return n1:find(w, 1, true) or n2:find(w, 1, true)
+	end
+	if has("submerge") then
+		st.submerged = true
+		st.submergedAt = tick()
+	elseif has("reappear") then
+		task.spawn(function()
+			local t0 = tick()
+			repeat
+				task.wait()
+			until not track.IsPlaying or tick() - t0 > 8
+			st.submerged = false
+		end)
+	elseif has("death") then
+		st.dead = true
+	end
+end
+function SeaBeastWatch(model)
+	local st = SeaBeastStates[model]
+	if not st then
+		st = { submerged = false, dead = false, conns = {}, animOk = false, lastTry = 0 }
+		SeaBeastStates[model] = st
+		pcall(function()
+			model.Destroying:Connect(function()
+				for _, c in ipairs(st.conns) do
+					pcall(function()
+						c:Disconnect()
+					end)
+				end
+			end)
+		end)
+	end
+	if model:FindFirstChild("HealthBBG") then
+		st.hadHBG = true
+	end
+	if not st.animOk and tick() - st.lastTry >= 1 then
+		st.lastTry = tick()
+		pcall(function()
+			local animator = model:FindFirstChildWhichIsA("Animator", true)
+			if animator then
+				st.animOk = true
+				for _, tr in ipairs(animator:GetPlayingAnimationTracks()) do
+					seaBeastApplyTrack(st, tr)
+				end
+				st.conns[#st.conns + 1] = animator.AnimationPlayed:Connect(function(tr)
+					seaBeastApplyTrack(st, tr)
+				end)
+			end
+		end)
+	end
+	return st
+end
+function SeaBeastHP(model)
+	local ok, hp = pcall(function()
+		local txt = model.HealthBBG.Frame.TextLabel.Text:gsub(",", "")
+		return tonumber(txt:match("(%d+%.?%d*)%s*/"))
+	end)
+	return ok and hp or nil
+end
+function SeaBeastDead(model)
+	if not model or not model.Parent then
+		return true
+	end
+	local st = SeaBeastStates[model]
+	if st and st.dead then
+		return true
+	end
+	local hbg = model:FindFirstChild("HealthBBG")
+	if st and hbg then
+		st.hadHBG = true
+	end
+	local hp = SeaBeastHP(model)
+	if (hp and hp <= 0) or (st and st.hadHBG and not hbg) then
+		if st then
+			st.dead = true
+		end
+		return true
+	end
+	return false
+end
+function SeaBeastSubmerged(model)
+	local st = SeaBeastStates[model]
+	if not st or not st.submerged then
+		return false
+	end
+	if tick() - (st.submergedAt or 0) > 25 then
+		st.submerged = false
+		return false
+	end
+	return true
+end
+function SeaBeastQualified(C)
+	if C.Name ~= "SeaBeast1" or not C:FindFirstChild("HumanoidRootPart") or not C:FindFirstChild("HealthBBG") then
+		return false
+	end
+	local ok, res = pcall(function()
+		local txt = C.HealthBBG.Frame.TextLabel.Text
+		local P = txt:gsub("/%d+,%d+", "")
+		local maxText
+		if string.find(P, ",") then
+			maxText = txt:gsub("%d+,%d+/", "")
+		else
+			maxText = txt:gsub("%d+/", "")
+		end
+		local mx = tonumber((maxText:gsub(",", "")))
+		return mx and mx >= 90000 and t:DistanceFromCharacter(C.HumanoidRootPart.Position) < 2000
+	end)
+	return ok and res or false
+end
+SeaBeastLeaveCache = { b = nil, t = 0, v = false }
+function SeaBeastShouldLeave(b)
+	if not b or b.Name ~= "SeaBeast1" then
+		return false
+	end
+	SeaBeastWatch(b)
+	if SeaBeastDead(b) then
+		return true
+	end
+	if not SeaBeastSubmerged(b) then
+		return false
+	end
+	local now = tick()
+	if SeaBeastLeaveCache.b == b and now - SeaBeastLeaveCache.t < 0.3 then
+		return SeaBeastLeaveCache.v
+	end
+	local v = false
+	for _, C in ipairs(game:GetService("Workspace").SeaBeasts:GetChildren()) do
+		if C ~= b and SeaBeastQualified(C) then
+			SeaBeastWatch(C)
+			if not SeaBeastDead(C) and not SeaBeastSubmerged(C) then
+				v = true
+				break
+			end
+		end
+	end
+	SeaBeastLeaveCache = { b = b, t = now, v = v }
+	return v
+end
 function DetectSeaEvents(b)
 	local l = SafeMultiSelect("Select Sea Events")
 	if b or l.SeaBeast then
-		local P, Y, H = next, game:GetService("Workspace").SeaBeasts:GetChildren()
-		for C, C in P, Y, H do
-			if C.Name == "SeaBeast1" and (C:FindFirstChild("HumanoidRootPart")) and (C:FindFirstChild("HealthBBG")) then
-				local P, Y = C.HealthBBG.Frame.TextLabel.Text:gsub("/%d+,%d+", ""), C.HealthBBG.Frame.TextLabel.Text
-				if
-					tonumber(
-							(
-								((function() if string.find(P, ",") then return (Y:gsub("%d+,%d+/", "")) else return (Y:gsub("%d+/", "")) end end)()):gsub(
-									",",
-									""
-								)
-							)
-						)
-						>= 90000
-					and t:DistanceFromCharacter(C.HumanoidRootPart.Position) < 2000
-				then
-					return C
+		local fallback
+		for _, C in ipairs(game:GetService("Workspace").SeaBeasts:GetChildren()) do
+			if SeaBeastQualified(C) then
+				SeaBeastWatch(C)
+				if not SeaBeastDead(C) then
+					if not SeaBeastSubmerged(C) then
+						return C
+					end
+					fallback = fallback or C
 				end
 			end
+		end
+		if fallback then
+			return fallback
 		end
 	end
 	if b or l.Terrorshark then
@@ -10783,6 +11746,7 @@ function UseSkillonlyFruit()
 		end
 	end
 end
+
 function AutoSeabeast()
 	if not StackFarmOther then
 		return
@@ -10798,6 +11762,7 @@ function AutoSeabeast()
 		WarnOnce("NoSeaEvent", "Chua chon su kien nao o Sea Event > Select Sea Events.")
 		return
 	end
+
 	b = DetectSeaEvents()
 	if not b then
 		getgenv().PathSeaBeast = false
@@ -10814,7 +11779,10 @@ function AutoSeabeast()
 			task.wait()
 			TeleportSeaEvents(b)
 			if b:FindFirstChildWhichIsA("Humanoid") then
-				if Settings["Use Dragonstorm For Sea Event"] then
+				if b.Name == "Piranha" then
+					UsedualFlock()
+					ClickM1(b, true)
+				elseif Settings["Use Dragonstorm For Sea Event"] then
 					if Settings["Auto Change Dragonstorm With Skull Guitar"] then
 						if not NameWeapon("Gun") or NameWeapon("Gun") ~= "Dragonstorm" then
 							game:GetService("ReplicatedStorage").Remotes.CommF_
@@ -10911,24 +11879,46 @@ function AutoSeabeast()
 			or b:FindFirstChild("Health") and b.Health.Value == 0
 			or b:FindFirstChildWhichIsA("Humanoid") and b.Humanoid.Health == 0
 			or not StackFarmOther
+			or SeaBeastShouldLeave(b)
 	end
 end
 FarmingSeaEventSection = SeaEventTab.CreateSection("Farming")
 b = FarmingSeaEventSection.CreateDropdown(
 	{
-		Title = "Select Friend",
+		Title = "Select Owner Boat",
 		List = DetectNamePlayer(),
 		Search = true,
 		Selected = false,
-		Default = Settings["Select Friend"] or nil,
+		Default = Settings["Select Owner Boat"] or nil,
 	},
 	function(X)
-		SaveSettings("Select Friend", X)
+		SaveSettings("Select Owner Boat", X)
 	end
 )
 FarmingSeaEventSection.CreateButton({ Title = "Refresh Player" }, function()
 	b:GetNewList(DetectNamePlayer())
 end)
+mb = FarmingSeaEventSection.CreateDropdown(
+	{
+		Title = "Select Muti Player Sea Event",
+		List = PrepareMultiSelectList(DetectNamePlayerMulti(), Settings["Select Muti Player Sea Event"]),
+		Search = true,
+		Selected = true,
+		Default = Settings["Select Muti Player Sea Event"] or nil,
+	},
+	function(n, on)
+		SaveSettings("Select Muti Player Sea Event", n, on)
+	end
+)
+FarmingSeaEventSection.CreateButton({ Title = "Refresh Player Muti Sea" }, function()
+	mb:GetNewList(PrepareMultiSelectList(DetectNamePlayerMulti(), Settings["Select Muti Player Sea Event"]))
+end)
+FarmingSeaEventSection.CreateToggle(
+	{ Title = "Muti Farm Sea Event", Desc = "Owner: doi cac acc da chon ngoi du vao phao roi moi di san", Default = Settings["Muti Farm Sea Event"] or false },
+	function(v)
+		SaveSettings("Muti Farm Sea Event", v)
+	end
+)
 FarmingSeaEventSection.CreateToggle(
 	{ Title = "Auto Sea Event With Friend", Desc = nil, Default = Settings["Auto Sea Event With Friend"] or false },
 	function(b)
@@ -10980,6 +11970,7 @@ FarmingSeaEventSection.CreateToggle(
 		SaveSettings("Auto Sea Event", _)
 	end
 )
+
 _ = nil
 if game.PlaceId == getgenv().CheckPlaceId then
 	_ = require(game:GetService("ReplicatedStorage").DangerDistance)
@@ -11378,7 +12369,12 @@ function AutoFindLeviathan()
 		return
 	end
 	if Settings["Auto Destroy IDK"] and getgenv().DesIdk2 then
-		toTarget(getgenv().OldBoat.VehicleSeat.CFrame)
+		local ob = getgenv().OldBoat
+		if ob and ob:FindFirstChild("VehicleSeat") and ob.Humanoid.Value > 0 then
+			toTarget(ob.VehicleSeat.CFrame)
+		else
+			getgenv().DesIdk2 = false -- thuyền cũ hỏng rồi thì bỏ
+		end
 		if t.Character.Humanoid.Sit then
 			getgenv().DesIdk2 = false
 		end
@@ -11412,7 +12408,7 @@ function AutoFindLeviathan()
 				g.VehicleSeat.BodyVelocity.MaxForce
 			wait(0.5)
 			local C = false
-			g.VehicleSeat.BodyVelocity.MaxForce = Vector3.new(1 / 0, 1 / 0, 1 / 0)
+			g.VehicleSeat.BodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
 			local J = s(g.VehicleSeat.Position.Y, 1000)
 			if not t.PlayerGui.Main.Compass.Frame.DangerLevel.Visible then
 				wait(0.2)
@@ -11846,6 +12842,31 @@ function MultiSegmentLeviathan(s, g)
 	end
 end
 getgenv().CFrameLeviathan = CFrame.new(0, 142, 0)
+getgenv().UseDragonstormLeviathan = function(part)
+	if not part or not part.Parent then
+		return false
+	end
+	local char = t.Character
+	if not char then
+		return false
+	end
+	if not char:FindFirstChild("Dragonstorm") then
+		if t.Backpack:FindFirstChild("Dragonstorm") then
+			equiptool("Dragonstorm")
+		elseif tick() - (getgenv().__DSLevLoadTick or 0) > 3 then
+			getgenv().__DSLevLoadTick = tick()
+			pcall(function()
+				game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("LoadItem", "Dragonstorm")
+			end)
+		end
+		return false
+	end
+	if t:DistanceFromCharacter(part.Position) > (getgenv().ShootGunRange or 500) then
+		return false
+	end
+	getgenv().ShootGunDS(part)
+	return true
+end
 function AutoAttackLeviathan()
 	local s = MultiSegmentLeviathan(game.workspace.SeaBeasts, 2)
 		or (MultiSegmentLeviathan(game.workspace.SeaBeasts, 3))
@@ -11876,7 +12897,9 @@ function AutoAttackLeviathan()
 						toTarget((CFrame.new(s.HumanoidRootPart.Position.X, 142, s.HumanoidRootPart.Position.Z)))
 					end)
 				end
-				if Settings["Use Click M1 Fruit Leviathan"] then
+				if Settings["Use M1 Dragonstorm Leviathan"] then
+					getgenv().UseDragonstormLeviathan(s.Hitbox11)
+				elseif Settings["Use Click M1 Fruit Leviathan"] then
 					equiptool(NameWeapon("Blox Fruit"))
 					local b = NameWeapon("Blox Fruit")
 					if t.Character:FindFirstChild(b) and (t.Character[b]:FindFirstChild("LeftClickRemote")) then
@@ -11917,7 +12940,9 @@ function AutoAttackLeviathan()
 					toTarget((CFrame.new(b.HumanoidRootPart.Position.X, 142, b.HumanoidRootPart.Position.Z)))
 				end)
 			end
-			if Settings["Use Click M1 Fruit Leviathan"] then
+			if Settings["Use M1 Dragonstorm Leviathan"] then
+				getgenv().UseDragonstormLeviathan(b.Hitbox11)
+			elseif Settings["Use Click M1 Fruit Leviathan"] then
 				equiptool(NameWeapon("Blox Fruit"))
 				local X = NameWeapon("Blox Fruit")
 				if t.Character:FindFirstChild(X) and (t.Character[X]:FindFirstChild("LeftClickRemote")) then
@@ -12045,6 +13070,12 @@ LeviathanEventSection.CreateToggle(
 			end)
 		end
 		SaveSettings("Auto Attack Leviathan", b)
+	end
+)
+LeviathanEventSection.CreateToggle(
+	{ Title = "Use M1 Dragonstorm Leviathan", Desc = nil, Default = Settings["Use M1 Dragonstorm Leviathan"] or false },
+	function(b)
+		SaveSettings("Use M1 Dragonstorm Leviathan", b)
 	end
 )
 LeviathanEventSection.CreateToggle(
@@ -12275,7 +13306,7 @@ LeviathanEventSection.CreateToggle(
 )
 BoatSettingSection = SeaEventTab.CreateSection("Boat Setting")
 b = table.find({ Enum.Platform.IOS, Enum.Platform.Android }, game:GetService("UserInputService"):GetPlatform())
-FLYING = false
+FLYING = {}
 QEfly = true
 iyflyspeed = 1
 IYMouse = IYMouse or game:GetService("Players").LocalPlayer:GetMouse()
@@ -12392,7 +13423,7 @@ function randomStringfly()
 	return table.concat(s)
 end
 function NOFLY()
-	FLYING = false
+	FLYING = {}
 	if game.Players.LocalPlayer.PlayerGui:FindFirstChild("ScreenGuiFly") then
 		game.Players.LocalPlayer.PlayerGui.ScreenGuiFly:Destroy()
 	end
@@ -12411,7 +13442,7 @@ s, X = randomStringfly(), randomStringfly()
 g, l = nil, nil
 function S(I)
 	pcall(function()
-		FLYING = false
+		FLYING = {}
 		game.Players.LocalPlayer.PlayerGui.ScreenGuiFly:Destroy()
 		local _ = getRoot(I.Character)
 		_:FindFirstChild(s):Destroy()
@@ -12511,7 +13542,7 @@ end
 BoatSettingSection.CreateToggle({ Title = "Fly Boat", Desc = nil, Default = Settings["Fly Boat"] or false }, function(s)
 	if s then
 		spawn(function()
-			while Settings["Fly Boat"] and (wait(0.1)) do
+			while Settings["Fly Boat"] and (task.wait(0.03)) do
 				pcall(function()
 					if t.Character.Humanoid.Sit then
 						if not b then
@@ -12777,10 +13808,10 @@ function AutoUpgradeRaceDraco()
 						BringMob(b)
 						UsedualFlock()
 						ClickM1(b)
-						if Settings["Select Weapon"] == "Blox Fruit" then
+						if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 							toTarget(b.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 						else
-							toTarget(b.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+							toTarget(b.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 						end
 					until not IsMobAlive(b) or not Settings["Auto Upgrade Race V2-V3 Draco"]
 				end
@@ -13026,7 +14057,6 @@ function DetectRockVolcano()
 	end
 	return R
 end
--- Use Skull Guitar with fix lava: click chuot vao model da (world -> screen), moi `interval` giay click 1 lan
 function ClickModelFixLava(model, interval)
 	if not model or tick() - (getgenv().__LastRockClick or 0) < (interval or 0.6) then
 		return
@@ -13048,7 +14078,6 @@ function ClickModelFixLava(model, interval)
 	vim:SendMouseButtonEvent(x, y, 0, true, game, 1)
 	vim:SendMouseButtonEvent(x, y, 0, false, game, 1)
 end
--- Co da can sua: trang bi Skull Guitar (chua co thi LoadItem lay ra), du gan da (< 100 studs) thi click vao model da moi 0.6s
 function UseSkullGuitarFixLava(rock)
 	local char = t.Character
 	if not char or not rock then
@@ -13175,31 +14204,39 @@ function CheckPosnearRock(b, s)
 	end
 	return g, R
 end
-b, s, X =
-	false,
-	1,
-	{
-		[273] = CFrame.new(40, 0, 0),
-		[286] = CFrame.new(40, 0, 0),
-		[246] = CFrame.new(0, -40, 0),
-		[486] = CFrame.new(40, 0, 0),
-		[364] = CFrame.new(40, 0, 0),
-		[682] = CFrame.new(0, 0, -40),
-		[490] = CFrame.new(0, 40, 0),
-		[691] = CFrame.new(40, 0, 0),
-		[502] = CFrame.new(-40, 0, 0),
-		[256] = CFrame.new(-40, 0, 0),
-		[290] = CFrame.new(0, 40, 0),
-		[427] = CFrame.new(0, 40, 0),
-		[692] = CFrame.new(0, 0, 40),
-		[316] = CFrame.new(0, 40, 0),
-		[481] = CFrame.new(0, 40, 0),
-		[594] = CFrame.new(0, 40, 0),
-		[649] = CFrame.new(40, 0, 0),
-		[285] = CFrame.new(0, -40, 0),
-		[250] = CFrame.new(0, 40, 0),
-		[454] = CFrame.new(-40, 0, 0),
-	}
+-- FIXED VOLCANO STATE - không share b,s,X
+VolcanoState = {
+    ReturnToSkull = false,
+    SafeIndex = 1,
+    Offsets = {
+        [273] = CFrame.new(40, 0, 0),
+        [286] = CFrame.new(40, 0, 0),
+        [246] = CFrame.new(0, -40, 0),
+        [486] = CFrame.new(40, 0, 0),
+        [364] = CFrame.new(40, 0, 0),
+        [682] = CFrame.new(0, 0, -40),
+        [490] = CFrame.new(0, 40, 0),
+        [691] = CFrame.new(40, 0, 0),
+        [502] = CFrame.new(-40, 0, 0),
+        [256] = CFrame.new(-40, 0, 0),
+        [290] = CFrame.new(0, 40, 0),
+        [427] = CFrame.new(0, 40, 0),
+        [692] = CFrame.new(0, 0, 40),
+        [316] = CFrame.new(0, 40, 0),
+        [481] = CFrame.new(0, 40, 0),
+        [594] = CFrame.new(0, 40, 0),
+        [649] = CFrame.new(40, 0, 0),
+        [285] = CFrame.new(0, -40, 0),
+        [250] = CFrame.new(0, 40, 0),
+        [454] = CFrame.new(-40, 0, 0),
+    }
+}
+b = VolcanoState.ReturnToSkull
+s = VolcanoState.SafeIndex
+X = VolcanoState.Offsets
+getgenv().CanReset = getgenv().CanReset or false
+getgenv().RespawnVolcano = getgenv().RespawnVolcano or false
+getgenv().LastBoatCheck = getgenv().LastBoatCheck or 0
 function BuyGearDracoV4()
 	if string.find(CheckAcientOneDracoStatus(), "Can Buy Gear") then
 		game.ReplicatedStorage.Remotes.CommF_:InvokeServer("UpgradeRace", "Buy", 2)
@@ -13299,10 +14336,10 @@ function FullyDraco()
 								BringMob(R)
 								UsedualFlock()
 								ClickM1(R)
-								if Settings["Select Weapon"] == "Blox Fruit" then
+								if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 									toTarget(R.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 								else
-									toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+									toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 								end
 							until not IsMobAlive(R) or not Settings["Fully Trial Draco"]
 						end
@@ -13365,10 +14402,10 @@ function FullyDraco()
 										BringMob(R)
 										UsedualFlock()
 										ClickM1(R)
-										if Settings["Select Weapon"] == "Blox Fruit" then
+										if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 											toTarget(R.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 										else
-											toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+											toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 										end
 									until not IsMobAlive(R) or not Settings["Fully Trial Draco"] or g
 								end
@@ -13397,10 +14434,10 @@ function FullyDraco()
 										BringMob(R)
 										UsedualFlock()
 										ClickM1(R)
-										if Settings["Select Weapon"] == "Blox Fruit" then
+										if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 											toTarget(R.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 										else
-											toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+											toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 										end
 									until not IsMobAlive(R) or not Settings["Fully Trial Draco"] or g
 								end
@@ -13609,14 +14646,15 @@ function FullyDraco()
 					if g then
 						if Settings["Fix Volcano Safe"] then
 							local R = DetectPositionVolcano()
-							local m, m = CheckPosnearRock(R, t.Character.HumanoidRootPart)
-							if t:DistanceFromCharacter((CheckPosnearRock(R, g.WorldPivot))) >= 400 then
-								s = m + 1
-								if m >= 7 then
-									s = 1
+							local posPlayer, idxPlayer = CheckPosnearRock(R, t.Character.HumanoidRootPart)
+							local posRock, idxRock = CheckPosnearRock(R, g.WorldPivot)
+							if t:DistanceFromCharacter(posRock) >= 400 then
+								VolcanoState.SafeIndex = idxPlayer + 1
+								if idxPlayer >= 7 then
+									VolcanoState.SafeIndex = 1
 								end
-								local m = R[s]
-								toTarget(CFrame.new(m))
+								local targetPos = R[VolcanoState.SafeIndex]
+								if targetPos then toTarget(CFrame.new(targetPos)) end
 							else
 								local R = X[math.floor(g.WorldPivot.Position.Y)]
 								repeat
@@ -13648,11 +14686,11 @@ function FullyDraco()
 								wait(1)
 							end
 						else
-							local R = X[math.floor(g.WorldPivot.Position.Y)]
+							local offset = VolcanoState.Offsets[math.floor(g.WorldPivot.Position.Y)] or CFrame.new(0,40,0)
 							repeat
 								task.wait()
-								if t:DistanceFromCharacter((g.WorldPivot * R).Position) > 8 then
-									toTarget(g.WorldPivot * R)
+								if t:DistanceFromCharacter((g.WorldPivot * offset).Position) > 8 then
+									toTarget(g.WorldPivot * offset)
 								end
 								if Settings["Use Skull Guitar with fix lava"] then
 									UseSkullGuitarFixLava(g)
@@ -13691,10 +14729,10 @@ function FullyDraco()
 				BringMob(g)
 				UsedualFlock()
 				ClickM1(g)
-				if Settings["Select Weapon"] == "Blox Fruit" then
+				if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 				else
-					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 				end
 			until not IsMobAlive(g) or not Settings["Fully Trial Draco"]
 		elseif typeof(e) == "table" then
@@ -13795,10 +14833,10 @@ RaceDracoSection.CreateToggle(
 									BringMob(R)
 									UsedualFlock()
 									ClickM1(R)
-									if Settings["Select Weapon"] == "Blox Fruit" then
+									if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 										toTarget(R.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 									else
-										toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+										toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 									end
 								until not IsMobAlive(R) or not Settings["Auto Finish Train Draco Quest"]
 							elseif typeof(e) == "table" then
@@ -14065,10 +15103,10 @@ function UpgradeRaceV2AndV3()
 						BringMob(l)
 						UsedualFlock()
 						ClickM1(l)
-						if Settings["Select Weapon"] == "Blox Fruit" then
+						if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 							toTarget(l.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 						else
-							toTarget(l.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+							toTarget(l.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 						end
 					until not IsMobAlive(l) or not Settings["Auto Upgrade Race V2-V3"]
 				end
@@ -14111,10 +15149,10 @@ function UpgradeRaceV2AndV3()
 						sizepart(S)
 						UsedualFlock()
 						ClickM1(S)
-						if Settings["Select Weapon"] == "Blox Fruit" then
+						if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 							toTarget(S.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 						else
-							toTarget(S.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+							toTarget(S.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 						end
 					until not IsMobAlive(S)
 					if not table.find(BlBossHuman, m.Name) then
@@ -14393,10 +15431,10 @@ function GetCyborg()
 				sizepart(g)
 				UsedualFlock()
 				ClickM1(g)
-				if Settings["Select Weapon"] == "Blox Fruit" then
+				if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 				else
-					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 				end
 			until not IsMobAlive(g) or not Settings["Auto Get Cyborg"]
 		elseif not DetectItemPlr("Microchip") and game.Players.LocalPlayer.Data.Fragments.Value >= 1000 then
@@ -14449,10 +15487,10 @@ function GetRaceGhoul()
 				BringMob(R)
 				UsedualFlock()
 				ClickM1(R)
-				if Settings["Select Weapon"] == "Blox Fruit" then
+				if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 					toTarget(R.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 				else
-					toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+					toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 				end
 			until not IsMobAlive(R) or not Settings["Auto Get Ghoul"]
 		elseif typeof(g) == "table" then
@@ -14534,10 +15572,10 @@ function GetRaceGhoul()
 				sizepart(g)
 				UsedualFlock()
 				ClickM1(g)
-				if Settings["Select Weapon"] == "Blox Fruit" then
+				if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 				else
-					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 				end
 			until not IsMobAlive(g) or not Settings["Auto Get Ghoul"]
 			wait(5)
@@ -14850,10 +15888,10 @@ RaceV4Section.CreateToggle(
 								BringMob(l)
 								UsedualFlock()
 								ClickM1(l)
-								if Settings["Select Weapon"] == "Blox Fruit" then
+								if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 									toTarget(l.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 								else
-									toTarget(l.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+									toTarget(l.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 								end
 							until not IsMobAlive(l) or not Settings["Auto Finish Train Quest"] or not CheckGoTrain()
 						elseif typeof(e) == "table" then
@@ -15260,10 +16298,10 @@ function AutoTrialV4()
 						repeat
 							task.wait()
 							sizepart(m)
-							if Settings["Select Weapon"] == "Blox Fruit" then
+							if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 								toTarget(m.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 							else
-								toTarget(m.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+								toTarget(m.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 							end
 							ClickM1(m)
 							UsedualFlock()
@@ -15347,10 +16385,10 @@ function AutoTrialV4()
 						repeat
 							task.wait()
 							sizepart(m)
-							if Settings["Select Weapon"] == "Blox Fruit" then
+							if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 								toTarget(m.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 							else
-								toTarget(m.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+								toTarget(m.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 							end
 							UsedualFlock()
 							ClickM1(m)
@@ -15615,10 +16653,10 @@ function GetRainBowHaki()
 			repeat
 				task.wait()
 				sizepart(g)
-				if Settings["Select Weapon"] == "Blox Fruit" then
+				if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 				else
-					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 				end
 				ClickM1(g)
 				UsedualFlock()
@@ -15720,10 +16758,10 @@ function GuitarPuzzleProgress()
 						sizepart(g)
 						UsedualFlock()
 						ClickM1(g)
-						if Settings["Select Weapon"] == "Blox Fruit" then
+						if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 							toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 						else
-							toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+							toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 						end
 					until not IsMobAlive(g)
 				until CountZombie() == 0
@@ -15837,10 +16875,10 @@ function AutoSoulGuitar()
 					repeat
 						task.wait()
 						sizepart(g)
-						if Settings["Select Weapon"] == "Blox Fruit" then
+						if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 							toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 						else
-							toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+							toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 						end
 						UsedualFlock()
 						ClickM1(g)
@@ -15942,10 +16980,10 @@ function AutoSoulGuitar()
 					BringMob(R)
 					UsedualFlock()
 					ClickM1(R)
-					if Settings["Select Weapon"] == "Blox Fruit" then
+					if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 						toTarget(R.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 					else
-						toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+						toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 					end
 				until not IsMobAlive(R) or not Settings["Auto Soul Guitar"]
 			elseif typeof(g) == "table" then
@@ -16036,10 +17074,10 @@ function QuestGood4()
 				equiptool(NameWeapon("Sword"))
 				sizepart(g)
 				ClickM1(g)
-				if Settings["Select Weapon"] == "Blox Fruit" then
+				if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 				else
-					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 				end
 			until not IsMobAlive(g)
 		else
@@ -16112,7 +17150,7 @@ function Questgood5()
 				local g = DetectMobHell()
 				sizepart(g)
 				equiptool(NameWeapon("Sword"))
-				toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+				toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 				getgenv().ClickM1(g)
 			until not DetectMobCDK()
 		else
@@ -16148,10 +17186,10 @@ function Questgood5()
 			sizepart(g)
 			equiptool(NameWeapon("Sword"))
 			ClickM1(g)
-			if Settings["Select Weapon"] == "Blox Fruit" then
+			if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 				toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 			else
-				toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+				toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 			end
 		until not IsMobAlive(g) or not Settings["Auto CDK"]
 		TweenManager.CancelCurrent()
@@ -16213,10 +17251,10 @@ function QuestEvil4()
 			BringMob(g)
 			equiptool(NameWeapon("Sword"))
 			ClickM1(g)
-			if Settings["Select Weapon"] == "Blox Fruit" then
+			if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 				toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 			else
-				toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+				toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 			end
 		until not g or not g.Parent or g.Humanoid.Health == 0
 	else
@@ -16244,10 +17282,10 @@ function QuestEvil5()
 						BringMob(g)
 						equiptool(NameWeapon("Sword"))
 						ClickM1(g)
-						if Settings["Select Weapon"] == "Blox Fruit" then
+						if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 							toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 						else
-							toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+							toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 						end
 					until not IsMobAlive(g) or not Settings["Auto CDK"]
 				elseif typeof(e) == "table" then
@@ -16325,7 +17363,7 @@ function QuestEvil5()
 				task.wait()
 				local g = DetectMobHell()
 				sizepart(g)
-				toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+				toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 				equiptool(NameWeapon("Sword"))
 				getgenv().ClickM1(g)
 			until not DetectMobCDK()
@@ -16367,6 +17405,7 @@ function CheckMasterSword(g, R)
 	return false
 end
 function GetCDK()
+	if not getgenv().__CDKEntered then getgenv().__CDKEntered = true print("[CDK] bat dau GetCDK") end
 	if not CheckItemInventory("Tushita") or not CheckItemInventory("Yama") then
 		A.CreateNoti({ Title = "Banana Cat Hub", Desc = "Get Tushita and Yama", ShowTime = 5 })
 		wait(5)
@@ -16384,12 +17423,21 @@ function GetCDK()
 			and not t.Character:FindFirstChild("Yama")
 			and not t.Backpack:FindFirstChild("Yama")
 		then
-			game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("LoadItem", "Tushita")
+			local loadRes = game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("LoadItem", "Tushita")
+			print("[CDK] LoadItem Tushita -> " .. tostring(loadRes))
+			A.CreateNoti({ Title = "Banana Cat Hub", Desc = "CDK: dang LoadItem Tushita (" .. tostring(loadRes) .. ")", ShowTime = 4 })
 			return
 		end
 		getgenv().Good = game.ReplicatedStorage.Remotes.CommF_:InvokeServer("CDKQuest", "Progress", "Good").Good
 		getgenv().Evil = game.ReplicatedStorage.Remotes.CommF_:InvokeServer("CDKQuest", "Progress", "Good").Evil
 		local g = ((getgenv().Good == 4 and getgenv().Evil == 3) and "Pedestal2" or ((getgenv().Good == 3 and getgenv().Evil == 4) and "Pedestal1" or nil))
+		-- [CDK DEBUG] bao trang thai that de biet bot dang o buoc nao
+		local cdkState = "Good=" .. tostring(getgenv().Good) .. " Evil=" .. tostring(getgenv().Evil) .. " pedestal=" .. tostring(g)
+		if getgenv().__CDKLastState ~= cdkState then
+			getgenv().__CDKLastState = cdkState
+			print("[CDK] " .. cdkState)
+			A.CreateNoti({ Title = "Banana Cat Hub", Desc = "CDK: " .. cdkState, ShowTime = 6 })
+		end
 		if g then
 			if
 				(game:GetService("Workspace").Map.Turtle.Cursed[g].Position - t.Character.HumanoidRootPart.Position).Magnitude
@@ -16424,10 +17472,10 @@ function GetCDK()
 								sizepart(l)
 								equiptool(NameWeapon("Sword"))
 								ClickM1(l)
-								if Settings["Select Weapon"] == "Blox Fruit" then
+								if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 									toTarget(l.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 								else
-									toTarget(l.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+									toTarget(l.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 								end
 							until not l or not l.Parent or l.Humanoid.Health <= 0
 						end
@@ -16437,6 +17485,7 @@ function GetCDK()
 				fireproximityprompt(game:GetService("Workspace").Map.Turtle.Cursed.Pedestal3.ProximityPrompt)
 			end
 		end
+		print("[CDK] nhanh: " .. tostring(getgenv().Good) .. "/" .. tostring(getgenv().Evil))
 		if getgenv().Good ~= 4 and getgenv().Good ~= -2 then
 			game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("CDKQuest", "StartTrial", "Good")
 			if getgenv().Good == -3 then
@@ -16478,12 +17527,12 @@ GetItemsSection.CreateToggle({ Title = "Auto CDK", Desc = nil, Default = Setting
 	if g then
 		spawn(function()
 			while Settings["Auto CDK"] and (task.wait(0.1)) do
-				local R, R = pcall(function()
-					GetCDK()
-				end)
-				if R then
-					print(R)
-				end
+				local okCDK, errCDK = pcall(GetCDK)
+					if not okCDK then
+						warn("[Auto CDK] loi: " .. tostring(errCDK))
+						A.CreateNoti({ Title = "Banana Cat Hub", Desc = "Auto CDK loi: " .. tostring(errCDK):sub(1, 120), ShowTime = 8 })
+						wait(3)
+					end
 			end
 		end)
 	end
@@ -16498,10 +17547,10 @@ function GetYama()
 			repeat
 				task.wait()
 				sizepart(g)
-				if Settings["Select Weapon"] == "Blox Fruit" then
+				if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 				else
-					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 				end
 				UsedualFlock()
 				ClickM1(g)
@@ -16529,10 +17578,10 @@ function GetYama()
 					BringMob(g)
 					UsedualFlock()
 					ClickM1(g)
-					if Settings["Select Weapon"] == "Blox Fruit" then
+					if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 						toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 					else
-						toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+						toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 					end
 				until not IsMobAlive(g) or not Settings["Auto Yama"]
 			end
@@ -16592,10 +17641,10 @@ function GetTushita()
 				repeat
 					task.wait()
 					sizepart(R)
-					if Settings["Select Weapon"] == "Blox Fruit" then
+					if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 						toTarget(R.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 					else
-						toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+						toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 					end
 					UsedualFlock()
 					ClickM1(R)
@@ -16674,10 +17723,10 @@ GetItemsSection.CreateToggle({ Title = "Auto TTK", Desc = nil, Default = Setting
 							BringMob(R)
 							equiptool(NameWeapon("Sword"))
 							ClickM1(R)
-							if Settings["Select Weapon"] == "Blox Fruit" then
+							if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 								toTarget(R.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 							else
-								toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+								toTarget(R.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 							end
 						until not IsMobAlive(R) or not Settings["Auto TTK"]
 					elseif typeof(e) == "table" then
@@ -16866,10 +17915,10 @@ function SaberSword()
 						repeat
 							task.wait()
 							sizepart(g)
-							if Settings["Select Weapon"] == "Blox Fruit" then
+							if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 								toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 							else
-								toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+								toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 							end
 							UsedualFlock()
 							ClickM1(g)
@@ -16988,10 +18037,10 @@ function SaberSword()
 				repeat
 					task.wait()
 					sizepart(g)
-					if Settings["Select Weapon"] == "Blox Fruit" then
+					if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 						toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 					else
-						toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+						toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 					end
 					UsedualFlock()
 					ClickM1(g)
@@ -17079,10 +18128,10 @@ function AutoYorumini()
 		repeat
 			task.wait()
 			sizepart(g)
-			if Settings["Select Weapon"] == "Blox Fruit" then
+			if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 				toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 			else
-				toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+				toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 			end
 			UsedualFlock()
 			ClickM1(g)
@@ -17098,10 +18147,10 @@ function AutoYorumini()
 					repeat
 						task.wait()
 						sizepart(g)
-						if Settings["Select Weapon"] == "Blox Fruit" then
+						if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 							toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 						else
-							toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+							toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 						end
 						UsedualFlock()
 						ClickM1(g)
@@ -17522,10 +18571,10 @@ function AutoUpgradeWeapon(R)
 				BringMob(g)
 				UsedualFlock()
 				ClickM1(g)
-				if Settings["Select Weapon"] == "Blox Fruit" then
+				if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 				else
-					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+					toTarget(g.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 				end
 			until not IsMobAlive(g)
 				or not Settings["Auto Upgrade Sword Inventory"] and not Settings["Auto Upgrade Gun Inventory"]
@@ -17645,10 +18694,10 @@ function AutoCraftinMagnetVol()
 					BringMob(f)
 					UsedualFlock()
 					ClickM1(f)
-					if Settings["Select Weapon"] == "Blox Fruit" then
+					if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 						toTarget(f.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 					else
-						toTarget(f.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+						toTarget(f.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 					end
 				until not IsMobAlive(f) or not Settings["Auto Crafting Volcanic Magnet"]
 			end
@@ -17710,10 +18759,10 @@ function AutoCraftinMagnetVol()
 							BringMob(f)
 							UsedualFlock()
 							ClickM1(f)
-							if Settings["Select Weapon"] == "Blox Fruit" then
+							if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 								toTarget(f.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 							else
-								toTarget(f.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+								toTarget(f.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 							end
 						until not IsMobAlive(f) or not Settings["Auto Crafting Volcanic Magnet"] or g
 					end
@@ -17741,10 +18790,10 @@ function AutoCraftinMagnetVol()
 							BringMob(f)
 							UsedualFlock()
 							ClickM1(f)
-							if Settings["Select Weapon"] == "Blox Fruit" then
+							if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 								toTarget(f.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 							else
-								toTarget(f.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+								toTarget(f.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 							end
 						until not IsMobAlive(f) or not Settings["Auto Crafting Volcanic Magnet"] or g
 					end
@@ -17818,11 +18867,15 @@ function AutoFindPrehistoric()
 	then
 		getgenv().RespawnVolcano = true
 		local g = checkboat()
-		if not g or g and t:DistanceFromCharacter(g.VehicleSeat.Position) >= 4000 then
+		-- FIX: chết hoặc thuyền hỏng/thuyền cũ xa thì mua mới luôn, không bay đi tìm thuyền cũ
+		local shouldBuyNew = not g or not g:FindFirstChild("VehicleSeat") or not g:FindFirstChild("Humanoid") or g.Humanoid.Value <= 0 or t:DistanceFromCharacter(g.VehicleSeat.Position) >= 2500 or (not t.Character.Humanoid.Sit and tick() - (getgenv().LastBoatCheck or 0) > 5 and t:DistanceFromCharacter(g.VehicleSeat.Position) > 500)
+		if shouldBuyNew then
+			getgenv().LastBoatCheck = tick()
 			local f = CFrame.new(-16204.0810546875, 9.0863618850708, 479.2259521484375)
 			if (f.Position - t.Character.HumanoidRootPart.Position).Magnitude > 8 then
 				if (f.Position - t.Character.HumanoidRootPart.Position).Magnitude > 1000 then
-					if game:GetService("Players").LocalPlayer.Data.LastSpawnPoint.Value == "Tiki" then
+					-- nếu spawn ở Tiki rồi thì reset để về Tiki Outpost mua thuyền cho gần
+					if game:GetService("Players").LocalPlayer.Data.LastSpawnPoint.Value == "Tiki" and Settings["Reset Character Buy Boat"] then
 						t.Character.Humanoid.Health = 0
 						return
 					end
@@ -17981,14 +19034,15 @@ function AutoAttackVolcano()
 			if g then
 				if Settings["Fix Volcano Safe"] then
 					local f = DetectPositionVolcano()
-					local R, R = CheckPosnearRock(f, t.Character.HumanoidRootPart)
-					if t:DistanceFromCharacter((CheckPosnearRock(f, g.WorldPivot))) >= 400 then
-						s = R + 1
-						if R >= 7 then
-							s = 1
+					local posPlayer, idxPlayer = CheckPosnearRock(f, t.Character.HumanoidRootPart)
+					local posRock, idxRock = CheckPosnearRock(f, g.WorldPivot)
+							if t:DistanceFromCharacter(posRock) >= 400 then
+						VolcanoState.SafeIndex = idxPlayer + 1
+						if idxPlayer >= 7 then
+							VolcanoState.SafeIndex = 1
 						end
-						local R = f[s]
-						toTarget(CFrame.new(R))
+						local targetPos = f[VolcanoState.SafeIndex]
+						if targetPos then toTarget(CFrame.new(targetPos)) end
 					else
 						local f = X[math.floor(g.WorldPivot.Position.Y)]
 						repeat
@@ -18175,7 +19229,7 @@ function FullyEventVolcano()
 						BringMob(f)
 						UsedualFlock()
 						ClickM1(f)
-						toTarget(f.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+						toTarget(f.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 					until not IsMobAlive(f) or not Settings["Fully Event Prehistoric Island"]
 				end
 				return
@@ -18236,10 +19290,10 @@ function FullyEventVolcano()
 								BringMob(f)
 								UsedualFlock()
 								ClickM1(f)
-								if Settings["Select Weapon"] == "Blox Fruit" then
+								if (Settings["Select Weapon Farm"] or Settings["Select Weapon"]) == "Blox Fruit" then
 									toTarget(f.HumanoidRootPart.CFrame * CFrame.new(-7, 20, 0))
 								else
-									toTarget(f.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+									toTarget(f.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 								end
 							until not IsMobAlive(f) or not Settings["Fully Event Prehistoric Island"] or g
 						end
@@ -18267,7 +19321,7 @@ function FullyEventVolcano()
 								BringMob(f)
 								UsedualFlock()
 								ClickM1(f)
-								toTarget(f.HumanoidRootPart.CFrame * CFrame.new(7, 20, 0))
+								toTarget(f.HumanoidRootPart.CFrame * CFrame.new(7, BuddhaFarmY(), 0))
 							until not IsMobAlive(f) or not Settings["Fully Event Prehistoric Island"] or g
 						end
 					elseif string.find(getgenv().QuestHunterDragon, "trees") then
@@ -18320,7 +19374,8 @@ function FullyEventVolcano()
 				and not game:GetService("Players").LocalPlayer.PlayerGui.Main.TopHUDList.RaidTimer.Visible
 			then
 				local g = checkboat()
-				if not g or g and t:DistanceFromCharacter(g.VehicleSeat.Position) >= 4000 then
+				local shouldBuyNew = not g or not g:FindFirstChild("VehicleSeat") or not g:FindFirstChild("Humanoid") or g.Humanoid.Value <= 0 or t:DistanceFromCharacter(g.VehicleSeat.Position) >= 2500
+				if shouldBuyNew then
 					local f = CFrame.new(-16204.0810546875, 9.0863618850708, 479.2259521484375)
 					if (f.Position - t.Character.HumanoidRootPart.Position).Magnitude > 8 then
 						if (f.Position - t.Character.HumanoidRootPart.Position).Magnitude > 1000 then
@@ -18332,8 +19387,10 @@ function FullyEventVolcano()
 									game:GetService("Players").LocalPlayer.Data.LastSpawnPoint.Value == "Tiki"
 									or game:GetService("Players").LocalPlayer.Data.LastSpawnPoint.Value == "Tiki2"
 								then
-									t.Character.Humanoid.Health = 0
-									return
+									if Settings["Reset Character Buy Boat"] then
+										t.Character.Humanoid.Health = 0
+										return
+									end
 								end
 							end
 						end
@@ -18494,20 +19551,21 @@ function FullyEventVolcano()
 			if g then
 				if Settings["Fix Volcano Safe"] then
 					local f = DetectPositionVolcano()
-					local R, R = CheckPosnearRock(f, t.Character.HumanoidRootPart)
-					if t:DistanceFromCharacter((CheckPosnearRock(f, g.WorldPivot))) >= 400 then
-						s = R + 1
-						if R >= 7 then
-							s = 1
+					local posPlayer, idxPlayer = CheckPosnearRock(f, t.Character.HumanoidRootPart)
+					local posRock, idxRock = CheckPosnearRock(f, g.WorldPivot)
+							if t:DistanceFromCharacter(posRock) >= 400 then
+						VolcanoState.SafeIndex = idxPlayer + 1
+						if idxPlayer >= 7 then
+							VolcanoState.SafeIndex = 1
 						end
-						local R = f[s]
-						toTarget(CFrame.new(R))
+						local targetPos = f[VolcanoState.SafeIndex]
+						if targetPos then toTarget(CFrame.new(targetPos)) end
 					else
-						local s = X[math.floor(g.WorldPivot.Position.Y)]
+						local offset = VolcanoState.Offsets[math.floor(g.WorldPivot.Position.Y)] or CFrame.new(0,40,0)
 						repeat
 							task.wait()
-							if t:DistanceFromCharacter((g.WorldPivot * s).Position) > 8 then
-								toTarget(g.WorldPivot * s)
+							if t:DistanceFromCharacter((g.WorldPivot * offset).Position) > 8 then
+								toTarget(g.WorldPivot * offset)
 							end
 							if Settings["Use Skull Guitar with fix lava"] then
 								UseSkullGuitarFixLava(g)
@@ -18530,11 +19588,11 @@ function FullyEventVolcano()
 						wait(1)
 					end
 				else
-					local s = X[math.floor(g.WorldPivot.Position.Y)]
+					local offset = VolcanoState.Offsets[math.floor(g.WorldPivot.Position.Y)] or CFrame.new(0,40,0)
 					repeat
 						task.wait()
-						if t:DistanceFromCharacter((g.WorldPivot * s).Position) > 8 then
-							toTarget(g.WorldPivot * s)
+						if t:DistanceFromCharacter((g.WorldPivot * offset).Position) > 8 then
+							toTarget(g.WorldPivot * offset)
 						end
 						if Settings["Use Skull Guitar with fix lava"] then
 							UseSkullGuitarFixLava(g)
@@ -19143,7 +20201,7 @@ SectionWebhook.CreateToggle(
 	end
 )
 b = {
-	Username = "Binini Hub",
+	Username = "Banana Cat Hub",
 	AvatarURL = "https://images-ext-1.discordapp.net/external/9LSZu__Uvs7I0N8MWag-JmwF2iT-pHCHSe2UdixGEXQ/%3Fsize%3D4096/https/cdn.discordapp.com/avatars/1262364141968949308/a_0c5fb64e2cbb35d029d73b44576c6a60.gif",
 	BannerURL = "https://cdn.discordapp.com/attachments/1017024488665264218/1262729537578471504/banner_server.jpg",
 	Title = "Banana Hub Notification",
@@ -19743,7 +20801,7 @@ a.CreateButton({ Title = "Copy Config" }, function()
 	setclipboard(b((HttpService:JSONDecode(readfile(FolderName .. "/" .. SaveFileName)))))
 	A.CreateNoti({ Title = "Banana Cat Hub", Desc = "Successfully Copy Config", ShowTime = 5 })
 end)
-a.CreateBind({ Title = "Toggle GUI", Key = Enum.KeyCode.LeftControl }, function()
+a.CreateBind({ Title = "Toggle GUI", Key = Enum.KeyCode.LeftAlt }, function()
 	if getgenv().UIToggled == nil then
 		getgenv().UIToggled = true
 	end
@@ -19756,11 +20814,6 @@ a.CreateBind({ Title = "Toggle GUI", Key = Enum.KeyCode.LeftControl }, function(
 		end
 	end
 end)
--- ===== AUTO LOAD SCRIPT: queue_on_teleport để tự chạy lại sau khi hop server / rejoin do disconnect =====
--- Không cần Key, không cần bỏ vào autoexec. Nguồn script (ưu tiên từ trên xuống):
---   1) getgenv().AutoLoadURL = "link raw script" (đặt trước khi chạy, nếu bạn chạy script bằng link)
---   2) bản copy script tự lưu ở "Banana Cat Hub/AutoLoad.lua" (tự lưu lúc chạy nếu executor cho đọc source)
---   3) loader gốc banana-hub (chỉ khi có Key)
 spawn(function()
 	pcall(function()
 		local queue = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
@@ -19770,7 +20823,6 @@ spawn(function()
 		end
 		local AUTO_FILE = FolderName .. "/AutoLoad.lua"
 
-		-- tự lưu source của chính script này (best-effort, tuỳ executor có trả full source hay không)
 		pcall(function()
 			local src = debug.getinfo(1, "S").source
 			if type(src) == "string" and #src > 100000 and src:find("Auto Load Script", 1, true) then
@@ -19807,7 +20859,7 @@ spawn(function()
 							'local ok, cfg = pcall(function() return game:GetService("HttpService"):JSONDecode(readfile(%q)) end)\n',
 							cfgPath
 						)
-						.. 'if ok and type(cfg) == "table" and cfg["Auto Load Script"] == false then return end\n' -- đã tắt toggle thì không chạy
+						.. 'if ok and type(cfg) == "table" and cfg["Auto Load Script"] == false then return end\n'
 					if getgenv().Key then
 						header = header .. string.format("getgenv().Key = %q\n", getgenv().Key)
 					end
@@ -19828,7 +20880,6 @@ loadstring(
 )()
 x = game:GetService("RunService")
 
--- NOCLIP chay tren Stepped (truoc physics), doc lap voi phan con lai cua script
 if not getgenv().__NOCLIP_STEPPED then
 	getgenv().__NOCLIP_STEPPED = x.Stepped:Connect(function()
 		local char = t.Character
@@ -19848,7 +20899,6 @@ if not getgenv().__NOCLIP_STEPPED then
 	end)
 end
 
--- require an toan: module nao game xoa/doi ten thi bo qua, khong lam chet script
 function safeRequire(getModule)
 	local ok, res = pcall(function()
 		return require(getModule())
@@ -19891,8 +20941,17 @@ if not getgenv().BananaCatMainLoop then
 				end
 			end
 			local T = t.Character:FindFirstChild("HumanoidRootPart")
+			local secretOn = IsSecretQuestOn() or IsRepairHold()
+			if T and secretOn and not T:FindFirstChild("FloatForce") then
+				local ff = Instance.new("BodyVelocity")
+				ff.Name = "FloatForce"
+				ff.Velocity = Vector3.new(0, 0, 0)
+				ff.MaxForce = Vector3.new(100000, 100000, 100000)
+				ff.P = 10000
+				ff.Parent = T
+			end
 			if T and (T:FindFirstChild("FloatForce")) and not TweenManager.currentTween then
-				if not ToggleNoclip() or tick() - k.LastCall > 2 then
+				if not secretOn and (not ToggleNoclip() or tick() - k.LastCall > 2) then
 					TweenManager.CancelCurrent()
 				end
 			end
@@ -19906,11 +20965,14 @@ if not getgenv().BananaCatMainLoop then
 			end
 		end)
 		task.spawn(function()
-			if Settings["Change WalkSpeed"] then
-				t.Character.Humanoid.WalkSpeed = Settings["Input WalkSpeed"] or 16
-			end
-			if Settings["Change JumpPower"] then
-				t.Character.Humanoid.JumpPower = Settings["Input JumpPower"] or 50
+			local hum = t.Character and t.Character:FindFirstChildOfClass("Humanoid")
+			if hum then
+				if Settings["Change WalkSpeed"] then
+					hum.WalkSpeed = Settings["Input WalkSpeed"] or 16
+				end
+				if Settings["Change JumpPower"] then
+					hum.JumpPower = Settings["Input JumpPower"] or 50
+				end
 			end
 		end)
 		if tick() - lastFruitTick >= 0.5 then
@@ -19971,9 +21033,12 @@ if not getgenv().BananaCatMainLoop then
 		end
 	end)
 end
--- (da bo collectgarbage("collect") luc OnTeleport: full GC giua luc engine dang huy map cu gay crash)
-getgenv().__BF_LOADED = game.JobId
 
+
+-- ===== PVP PRO TAB - FIXED BY META AI - Yellow Theme =====
+
+
+getgenv().__BF_LOADED = game.JobId
 end
 function __BF_GraftAll()
     local genv = getgenv()
@@ -19981,17 +21046,17 @@ function __BF_GraftAll()
     genv.__BF_GRAFTED = true
     if A == nil and result2 ~= nil then A = result2 end -- tail calls A.CreateNoti; this hub's UI object is result2
     local ok, err = pcall(__BF_GraftHelpers)
-    if not ok then warn("[Banana] graft helpers failed:", err) end
-    do local ok, err = pcall(__BF_GraftPage0) if not ok then warn("[Banana] tab failed: Farming Other", err) end end
-    do local ok, err = pcall(__BF_GraftPage1) if not ok then warn("[Banana] tab failed: Fruit and Raid, Dungeon", err) end end
-    do local ok, err = pcall(__BF_GraftPage2) if not ok then warn("[Banana] tab failed: Sea Event", err) end end
-    do local ok, err = pcall(__BF_GraftPage3) if not ok then warn("[Banana] tab failed: Upgrade Race", err) end end
-    do local ok, err = pcall(__BF_GraftPage4) if not ok then warn("[Banana] tab failed: Get and Upgrade Items", err) end end
-    do local ok, err = pcall(__BF_GraftPage5) if not ok then warn("[Banana] tab failed: Volcano Event", err) end end
-    do local ok, err = pcall(__BF_GraftPage6) if not ok then warn("[Banana] tab failed: ESP", err) end end
-    do local ok, err = pcall(__BF_GraftPage7) if not ok then warn("[Banana] tab failed: PVP", err) end end
-    do local ok, err = pcall(__BF_GraftPage8) if not ok then warn("[Banana] tab failed: Tab Webhook", err) end end
-    do local ok, err = pcall(__BF_GraftPage9) if not ok then warn("[Banana] tab failed: Setting", err) end end
+    if not ok then warn("[Banana] graft helpers failed:", err) else print("[Banana] graft helpers OK") end
+    do local ok, err = pcall(__BF_GraftPage0) if not ok then warn("[Banana] tab failed: Farming Other", err) else print("[Banana] tab loaded with logic: Farming Other") end end
+    do local ok, err = pcall(__BF_GraftPage1) if not ok then warn("[Banana] tab failed: Fruit and Raid, Dungeon", err) else print("[Banana] tab loaded with logic: Fruit and Raid, Dungeon") end end
+    do local ok, err = pcall(__BF_GraftPage2) if not ok then warn("[Banana] tab failed: Sea Event", err) else print("[Banana] tab loaded with logic: Sea Event") end end
+    do local ok, err = pcall(__BF_GraftPage3) if not ok then warn("[Banana] tab failed: Upgrade Race", err) else print("[Banana] tab loaded with logic: Upgrade Race") end end
+    do local ok, err = pcall(__BF_GraftPage4) if not ok then warn("[Banana] tab failed: Get and Upgrade Items", err) else print("[Banana] tab loaded with logic: Get and Upgrade Items") end end
+    do local ok, err = pcall(__BF_GraftPage5) if not ok then warn("[Banana] tab failed: Volcano Event", err) else print("[Banana] tab loaded with logic: Volcano Event") end end
+    do local ok, err = pcall(__BF_GraftPage6) if not ok then warn("[Banana] tab failed: ESP", err) else print("[Banana] tab loaded with logic: ESP") end end
+    do local ok, err = pcall(__BF_GraftPage7) if not ok then warn("[Banana] tab failed: PVP", err) else print("[Banana] tab loaded with logic: PVP") end end
+    do local ok, err = pcall(__BF_GraftPage8) if not ok then warn("[Banana] tab failed: Tab Webhook", err) else print("[Banana] tab loaded with logic: Tab Webhook") end end
+    do local ok, err = pcall(__BF_GraftPage9) if not ok then warn("[Banana] tab failed: Setting", err) else print("[Banana] tab loaded with logic: Setting") end end
     print("[Banana] graft done")
 end
 
